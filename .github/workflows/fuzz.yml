@@ -1,0 +1,41 @@
+name: fuzz-testing
+
+on:
+  push:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: full
+  FUZZ_TIME: 300
+  FUZZ_JOBS: 2
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+
+    name: fuzz-${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+      - uses: Swatinem/rust-cache@v1
+        with:
+          key: ${{ matrix.os }}
+
+      - uses: actions-rs/cargo@v1
+        name: Install cargo-fuzz
+        with:
+          command: install
+          args: cargo-fuzz
+
+      - name: fuzz testing
+        run: |
+          for FUZZ_TARGET in `cargo +nightly fuzz list`; do
+            cargo +nightly fuzz run ${FUZZ_TARGET} --jobs ${{ env.FUZZ_JOBS }} -- \
+              -max_total_time=${{ env.FUZZ_TIME }};
+          done
