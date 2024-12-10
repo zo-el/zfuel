@@ -1,7 +1,7 @@
 //! Custom error types for ZFuel transactions
 use crate::fraction::Fraction;
 use crate::fuel::ZFuel;
-use hdi::prelude::*;
+// use hdi::prelude::*;
 use std::fmt;
 
 #[derive(thiserror::Error, Debug, Clone)]
@@ -37,8 +37,8 @@ impl fmt::Display for ZFuelError {
 }
 
 pub type ZFuelResult<T> = Result<T, ZFuelError>;
-impl From<ZFuelError> for WasmError {
-    fn from(c: ZFuelError) -> Self {
-        wasm_error!(WasmErrorInner::Guest(format!("{:?}", c)))
-    }
-}
+// impl From<ZFuelError> for WasmError {
+//     fn from(c: ZFuelError) -> Self {
+//         wasm_error!(WasmErrorInner::Guest(format!("{:?}", c)))
+//     }
+// }
