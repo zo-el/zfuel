@@ -1,44 +1,50 @@
-//! Custom error types for ZFuel transactions
+//! Custom error types for Fuel transactions
 use crate::fraction::Fraction;
 use crate::fuel::ZFuel;
 use holochain_wasmer_common::{wasm_error, WasmError};
 use std::fmt;
 
 #[derive(thiserror::Error, Debug, Clone)]
-pub enum ZFuelError {
-    Range(String),                       // ZFuel range exceeded
-    FractionOverflow((ZFuel, Fraction)), // Overflow in ZFuel * Fraction
-    // LimitExceeded((Limit, String, Delta)), // An account Limit was exceeded by ZFuel value, by the given transaction Delta
+pub enum FuelError {
+    Range(String),                       // Fuel range exceeded
+    FractionOverflow((ZFuel, Fraction)), // Overflow in Fuel * Fraction
+    // AgentDenied(Limit),                 // All transactions w/ counterparty are denied
+    // LimitExceeded((Limit, String, Delta)), // An account Limit was exceeded by Fuel value, by the given transaction Delta
     // AgentDenied(Limit), // All transactions w/ counterparty are denied
     Generic(String), // we want to avoid this one if at all possible and add a new error variant instead
 }
 
-// All ZFuelError display logic is in one place which is here
-impl fmt::Display for ZFuelError {
+// All FuelError display logic is in one place which is here
+impl fmt::Display for FuelError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ZFuelError::Range(s) => write!(f, "ZFuel Range Error: {}", s),
-            ZFuelError::FractionOverflow((fuel, fraction)) => {
-                write!(f, "ZFuel overflow in ♓{} * {}", fuel, fraction)
+            FuelError::Range(s) => write!(f, "Fuel Range Error: {}", s),
+            FuelError::FractionOverflow((fuel, fraction)) => {
+                write!(f, "Fuel overflow in ♓{} * {}", fuel, fraction)
             }
-            // ZFuelError::LimitExceeded((limit, total, change)) => write!(
+            // FuelError::AgentDenied(limit) => write!(
             //     f,
-            //     "ZFuel Limit {} exceeded with duration total ♓{}, by tx. ♓{}, on {:?}",
-            //     limit, total, change.1, change.0
-            // ),
-            // ZFuelError::AgentDenied(limit) => write!(
-            //     f,
-            //     "ZFuel Limit {} denies any counterparty transaction",
+            //     "Fuel Limit {} denies any counterparty transaction",
             //     limit
             // ),
-            ZFuelError::Generic(s) => write!(f, "ZFuel Error: {}", s),
+            // FuelError::LimitExceeded((limit, total, change)) => write!(
+            //     f,
+            //     "Fuel Limit {} exceeded with duration total ♓{}, by tx. ♓{}, on {:?}",
+            //     limit, total, change.1, change.0
+            // ),
+            // FuelError::AgentDenied(limit) => write!(
+            //     f,
+            //     "Fuel Limit {} denies any counterparty transaction",
+            //     limit
+            // ),
+            FuelError::Generic(s) => write!(f, "Fuel Error: {}", s),
         }
     }
 }
 
-pub type ZFuelResult<T> = Result<T, ZFuelError>;
-impl From<ZFuelError> for WasmError {
-    fn from(c: ZFuelError) -> Self {
+pub type FuelResult<T> = Result<T, FuelError>;
+impl From<FuelError> for WasmError {
+    fn from(c: FuelError) -> Self {
         wasm_error!(format!("{:?}", c))
     }
 }

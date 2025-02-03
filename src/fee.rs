@@ -1,7 +1,7 @@
-//! Implements fee calculation.  The fee structure of ZFuel may change over time, but not between
-//! roll-outs of new ZFuel DNAs.  Therefore, its values and limits can be hard-coded here.
+//! Implements fee calculation.  The fee structure of Fuel may change over time, but not between
+//! roll-outs of new Fuel DNAs.  Therefore, its values and limits can be hard-coded here.
 
-use crate::error::ZFuelError;
+use crate::error::FuelError;
 use crate::fraction::Fraction;
 use crate::fuel::ZFuel;
 
@@ -13,7 +13,7 @@ pub const FEE_PERCENTAGE: Fraction = Fraction {
 
 /// tabulate_fee -- compute simple Transaction Fee from amount-based tables
 /// Note: Changes to the fee calculation in the future should not lead to overflow panics.
-pub fn tabulate_fee(amount: &ZFuel) -> Result<ZFuel, ZFuelError> {
+pub fn tabulate_fee(amount: &ZFuel) -> Result<ZFuel, FuelError> {
     let fee = (amount * FEE_PERCENTAGE)?;
     Ok(fee)
 }
@@ -22,7 +22,7 @@ pub fn tabulate_fee(amount: &ZFuel) -> Result<ZFuel, ZFuelError> {
 pub mod tests {
     use crate::fee::*;
 
-    /// smoke test ZFuel fees
+    /// smoke test Fuel fees
     #[test]
     fn fee_smoke_test() {
         let fee_tab = tabulate_fee(&ZFuel { units: 1_230_000 }).unwrap();

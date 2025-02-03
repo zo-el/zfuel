@@ -6,6 +6,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+## [0.2.0] - 2024-12-10
+
+### Update
+- update ZFuel from using u128 to u64
+
 ## [0.1.1] - 2024-12-10
 
 ### Update
