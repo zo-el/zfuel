@@ -2,11 +2,13 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
 ### Changed
 
-## [0.2.0] - 2024-12-10
+## [0.2.1] - 2025-02-03
+### Update
+- added the check function for fuel type and updated Fractions to handle 0 denominators
+
+## [0.2.0] - 2025-02-02
 
 ### Update
 - update ZFuel from using u128 to u64

@@ -1,3 +1,4 @@
+use crate::error::ZFuelError;
 use std::ops::{Add, Div, Mul, Sub};
 use std::{cmp, fmt};
 
@@ -9,21 +10,29 @@ pub struct Fraction {
 
 impl Fraction {
     /// Creates a new fraction with the given numerator and denominator
-    /// Panics if given a denominator of 0
-    pub fn new(numerator: i64, denominator: i64) -> Self {
+    pub fn new(numerator: i64, denominator: i64) -> Result<Self, ZFuelError> {
         if denominator == 0 {
-            panic!("Tried to create a fraction with a denominator of 0!")
+            return Err(ZFuelError::Generic(
+                "Tried to create a fraction with a denominator of 0!".to_string(),
+            ));
         }
         if denominator < 0 {
-            Self {
+            if numerator < -i64::MAX || denominator < -i64::MAX {
+                return Err(ZFuelError::Generic(
+                    "Tried to create a fraction with a numerator or denominator less than -i64::MAX!"
+                        .to_string(),
+                ));
+            }
+            let a = Self {
                 numerator: -numerator,
                 denominator: -denominator,
-            }
+            };
+            Ok(a)
         } else {
-            Self {
+            Ok(Self {
                 numerator,
                 denominator,
-            }
+            })
         }
     }
 
@@ -147,10 +156,10 @@ pub fn gcd(a: i64, b: i64) -> i64 {
 
 #[test]
 fn ordering_test() {
-    let a = Fraction::new(1, 2);
-    let b = Fraction::new(3, 4);
-    let c = Fraction::new(4, 3);
-    let d = Fraction::new(-1, 2);
+    let a = Fraction::new(1, 2).unwrap();
+    let b = Fraction::new(3, 4).unwrap();
+    let c = Fraction::new(4, 3).unwrap();
+    let d = Fraction::new(-1, 2).unwrap();
     assert!(a < b);
     assert!(a <= b);
     assert!(c > b);
@@ -160,19 +169,19 @@ fn ordering_test() {
 
 #[test]
 fn equality_test() {
-    let a = Fraction::new(1, 2);
-    let b = Fraction::new(2, 4);
-    let c = Fraction::new(5, 5);
+    let a = Fraction::new(1, 2).unwrap();
+    let b = Fraction::new(2, 4).unwrap();
+    let c = Fraction::new(5, 5).unwrap();
     assert!(a == b);
     assert!(a != c);
 }
 
 #[test]
 fn arithmetic_test() {
-    let a = Fraction::new(1, 2);
-    let b = Fraction::new(3, 4);
-    assert!(&a + &a == Fraction::new(1, 1));
-    assert!(&a - &a == Fraction::new(0, 5));
-    assert!(&a * &b == Fraction::new(3, 8));
-    assert!(&a / &b == Fraction::new(4, 6));
+    let a = Fraction::new(1, 2).unwrap();
+    let b = Fraction::new(3, 4).unwrap();
+    assert!(&a + &a == Fraction::new(1, 1).unwrap());
+    assert!(&a - &a == Fraction::new(0, 5).unwrap());
+    assert!(&a * &b == Fraction::new(3, 8).unwrap());
+    assert!(&a / &b == Fraction::new(4, 6).unwrap());
 }

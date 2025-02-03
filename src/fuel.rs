@@ -3,9 +3,17 @@
 //! "percentages" of Fuel amounts without losing (too much) precision, while retaining the
 //! ability to compute Fuel transaction fees on the largest possible transaction amounts.
 
-use crate::error::FuelError;
+use crate::error::ZFuelError;
 use crate::fraction::Fraction;
 // use crate::time::Period;
+use nom::{
+    branch::alt,
+    bytes::complete::tag,
+    character::complete::{char, digit1, space0},
+    combinator::{map_res, opt},
+    sequence::preceded,
+    Err, IResult,
+};
 use regex::Regex;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use std::{
@@ -105,7 +113,7 @@ pub struct ZFuel {
 }
 
 /// fuel::FuelResult -- a fully defined custom Result type for z Fuel operations
-pub type FuelResult = result::Result<ZFuel, FuelError>;
+pub type FuelResult = result::Result<ZFuel, ZFuelError>;
 
 /// Serialize as human-readable string, eg. "1.02" instead of { units: 102000000 }
 ///
@@ -134,6 +142,65 @@ impl ZFuel {
     pub fn new(units: i64) -> Self {
         ZFuel { units }
     }
+    pub fn zero() -> Self {
+        ZFuel { units: 0 }
+    }
+    fn parse_hex(input: &str) -> IResult<&str, (u64, u64), nom::error::Error<&str>> {
+        map_res(preceded(tag("0x"), digit1), |hex: &str| {
+            u64::from_str_radix(hex, 16).map(|val| (val, 0))
+        })(input)
+    }
+
+    fn parse_decimal(input: &str) -> IResult<&str, (u64, u64)> {
+        let (input, int_part) = opt(digit1)(input)?;
+        let (input, frac_part) = opt(preceded(char('.'), digit1))(input)?;
+        let int_part = int_part.unwrap_or("0");
+        let frac_part = frac_part.unwrap_or("0");
+        // Check if integer part exceeds the limit
+        if int_part.len() > INTLIMIT {
+            return Err(Err::Error(nom::error::Error::new(
+                input,
+                nom::error::ErrorKind::TooLarge,
+            )));
+        }
+        let mantissa = DENOMINATOR as u64
+            * int_part.parse::<u64>().map_err(|_| {
+                Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Digit))
+            })?;
+        let fraction = format!("{:0<exponent$.exponent$}", frac_part, exponent = EXPONENT)
+            .parse::<u64>()
+            .map_err(|_| Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Digit)))?;
+        Ok((input, (mantissa, fraction)))
+    }
+    #[allow(clippy::type_complexity)]
+    fn parse_fuel(
+        input: &str,
+    ) -> IResult<&str, (Option<&str>, (u64, u64)), nom::error::Error<&str>> {
+        let (input, _) = space0(input)?;
+        let (input, sign) = opt(alt((tag("+"), tag("-"))))(input)?;
+        let (input, _) = space0(input)?;
+        let (input, value) = alt((Self::parse_hex, Self::parse_decimal))(input)?;
+        let (input, _) = space0(input)?;
+        Ok((input, (sign, value)))
+    }
+    /// check: This function validates the input string using the parsers. It checks for a negative sign and returns an error if found; otherwise, it returns Ok(true).
+    pub fn check(amount: &str) -> Result<bool, ZFuelError> {
+        let clean_amount = amount.replace('_', "");
+
+        match Self::parse_fuel(&clean_amount) {
+            Ok((_, (sign, (_, _)))) => match sign {
+                Some("-") => Err(ZFuelError::Range(format!(
+                    "Invalid negative amount {}",
+                    amount
+                ))),
+                _ => Ok(true),
+            },
+            Err(_) => Err(ZFuelError::Range(format!(
+                "Invalid ZFuel amount {}",
+                amount
+            ))),
+        }
+    }
 }
 
 /// u64_to_i64 -- range-checked, optionally negating mantissa + fraction for Fuel.units.  Ensures
@@ -145,17 +212,17 @@ pub fn u64_to_i64(
     mantissa: u64,
     fraction: u64,
     range: u64,
-) -> Result<i64, FuelError> {
+) -> Result<i64, ZFuelError> {
     match mantissa.checked_add(fraction) {
         Some(u_units) => {
             if u_units > range {
-                Err(FuelError::Range(format!(
+                Err(ZFuelError::Range(format!(
                     "Exceeded range for z Fuel mantissa {}, fraction {}",
                     mantissa, fraction
                 )))
             } else if negative {
                 if u_units > MINRANGE {
-                    Err(FuelError::Range(format!(
+                    Err(ZFuelError::Range(format!(
                         "Underflow for z Fuel negative mantissa {}, fraction {}",
                         mantissa, fraction
                     )))
@@ -168,7 +235,7 @@ pub fn u64_to_i64(
                 Ok(u_units as i64)
             }
         }
-        None => Err(FuelError::Range(format!(
+        None => Err(ZFuelError::Range(format!(
             "Overflow for z Fuel mantissa {}, fraction {}",
             mantissa, fraction
         ))),
@@ -178,11 +245,11 @@ pub fn u64_to_i64(
 /// Fuel::from_str -- Covert from &str; Result may yield Err if parsing fails
 ///
 /// Handles hexadecimal and normal whole or fractional amounts of z Fuel, discarding any
-/// precision beyond the 8th (EXPONENT) decimal place of fractional precision.  Returns FuelError
+/// precision beyond the 8th (EXPONENT) decimal place of fractional precision.  Returns ZFuelError
 /// on any parsing or result value max range errors.
 ///
 impl FromStr for ZFuel {
-    type Err = FuelError;
+    type Err = ZFuelError;
 
     fn from_str(amount: &str) -> result::Result<Self, Self::Err> {
         lazy_static! {
@@ -207,7 +274,7 @@ impl FromStr for ZFuel {
 
         let caps = FUEL_RE
             .captures(amount)
-            .ok_or_else(|| FuelError::Range(format!("Invalid z Fuel amount {}", amount)))?;
+            .ok_or_else(|| ZFuelError::Range(format!("Invalid z Fuel amount {}", amount)))?;
 
         // RE matched.  Either a hex, and int or a mnt (mantissa, possibly empty) is required.  We
         // will parse the mantissa and fraction as an *unsigned* u64, because we must allow full
@@ -217,7 +284,7 @@ impl FromStr for ZFuel {
                 None => match caps.name("mnt") {
                     // not hex or int; must be a mantissa (possibly empty, if just ".123")
                     None => {
-                        return Err(FuelError::Range(
+                        return Err(ZFuelError::Range(
                             // No 'hex', 'int', or 'mnt' found? Failure of FUEL_RE
                             format!("Invalid z Fuel amount {}", amount),
                         ));
@@ -227,7 +294,7 @@ impl FromStr for ZFuel {
                         mnt_str => {
                             DENOMINATOR as u64
                                 * u64::from_str_radix(mnt_str, 10).or_else(|_| {
-                                    Err(FuelError::Range(format!(
+                                    Err(ZFuelError::Range(format!(
                                         "Invalid z Fuel amount {}; bad mantissa {}",
                                         amount,
                                         mnt.as_str()
@@ -239,7 +306,7 @@ impl FromStr for ZFuel {
                 Some(int) => {
                     DENOMINATOR as u64
                         * u64::from_str_radix(int.as_str(), 10).or_else(|_| {
-                            Err(FuelError::Range(format!(
+                            Err(ZFuelError::Range(format!(
                                 "Invalid z Fuel amount {}; bad int {}",
                                 amount,
                                 int.as_str()
@@ -248,7 +315,7 @@ impl FromStr for ZFuel {
                 }
             },
             Some(hex) => u64::from_str_radix(hex.as_str(), 16).or_else(|_| {
-                Err(FuelError::Range(format!(
+                Err(ZFuelError::Range(format!(
                     "Invalid z Fuel amount {}; bad hex {}",
                     amount,
                     hex.as_str()
@@ -269,7 +336,7 @@ impl FromStr for ZFuel {
                 10,
             )
             .or_else(|_| {
-                Err(FuelError::Range(format!(
+                Err(ZFuelError::Range(format!(
                     "Invalid z Fuel amount {}; bad fraction {}",
                     amount,
                     fra.as_str()
@@ -368,8 +435,8 @@ impl fmt::Debug for ZFuel {
 ///
 /// Fuel Operators -- Numerical operations with/without validity check
 ///
-/// Neg, Add, Sub, Mul, Div of Fuel always results in a checked Result<Fuel, FuelError> value.
-/// So, it is necessary to handle the FuelError that may result from invalid computations
+/// Neg, Add, Sub, Mul, Div of Fuel always results in a checked Result<Fuel, ZFuelError> value.
+/// So, it is necessary to handle the ZFuelError that may result from invalid computations
 /// before assigning any valid Fuel result:
 ///
 /// > let Fuel: value = ( Fuel::from_str( "1.0" ) + Fuel::from_str( "2.0" ) )?
@@ -387,7 +454,7 @@ impl Neg for ZFuel {
         Ok(match self.units.checked_neg() {
             Some(units) => ZFuel { units },
             None => {
-                return Err(FuelError::Range(format!(
+                return Err(ZFuelError::Range(format!(
                     "Overflow in negation of z Fuel amount {}",
                     self
                 )))
@@ -411,7 +478,7 @@ impl Add for ZFuel {
         Ok(match self.units.checked_add(rhs.units) {
             Some(units) => ZFuel { units },
             None => {
-                return Err(FuelError::Range(format!(
+                return Err(ZFuelError::Range(format!(
                     "Overflow in addition of z Fuel amount {} + {}",
                     self, rhs
                 )))
@@ -445,7 +512,7 @@ impl Add for &ZFuel {
 }
 
 impl Add<FuelResult> for ZFuel {
-    // Fuel + Result<Fuel, FuelError>
+    // Fuel + Result<Fuel, ZFuelError>
     type Output = FuelResult;
     fn add(self, other: Self::Output) -> Self::Output {
         match other {
@@ -456,7 +523,7 @@ impl Add<FuelResult> for ZFuel {
 }
 
 impl Add<FuelResult> for &ZFuel {
-    // &Fuel + Result<Fuel, FuelError>
+    // &Fuel + Result<Fuel, ZFuelError>
     type Output = FuelResult;
     fn add(self, other: Self::Output) -> Self::Output {
         match other {
@@ -467,7 +534,7 @@ impl Add<FuelResult> for &ZFuel {
 }
 
 impl Add<&FuelResult> for ZFuel {
-    // Fuel + &Result<Fuel, FuelError>
+    // Fuel + &Result<Fuel, ZFuelError>
     type Output = FuelResult;
     fn add(self, other: &Self::Output) -> Self::Output {
         match other {
@@ -478,7 +545,7 @@ impl Add<&FuelResult> for ZFuel {
 }
 
 impl Add<&FuelResult> for &ZFuel {
-    // &Fuel + &Result<Fuel, FuelError>
+    // &Fuel + &Result<Fuel, ZFuelError>
     type Output = FuelResult;
     fn add(self, other: &Self::Output) -> Self::Output {
         match other {
@@ -489,7 +556,7 @@ impl Add<&FuelResult> for &ZFuel {
 }
 
 impl Add<ZFuel> for FuelResult {
-    // Result<Fuel, FuelError> + Fuel
+    // Result<Fuel, ZFuelError> + Fuel
     type Output = FuelResult;
     fn add(self, rhs: ZFuel) -> Self::Output {
         match self {
@@ -500,7 +567,7 @@ impl Add<ZFuel> for FuelResult {
 }
 
 impl Add<&ZFuel> for FuelResult {
-    // Result<Fuel, FuelError> + &Fuel
+    // Result<Fuel, ZFuelError> + &Fuel
     type Output = FuelResult;
     fn add(self, rhs: &ZFuel) -> Self::Output {
         match self {
@@ -511,7 +578,7 @@ impl Add<&ZFuel> for FuelResult {
 }
 
 impl Add<ZFuel> for &FuelResult {
-    // &Result<Fuel, FuelError> + Fuel
+    // &Result<Fuel, ZFuelError> + Fuel
     type Output = FuelResult;
     fn add(self, rhs: ZFuel) -> Self::Output {
         match self {
@@ -522,7 +589,7 @@ impl Add<ZFuel> for &FuelResult {
 }
 
 impl Add<&ZFuel> for &FuelResult {
-    // &Result<Fuel, FuelError> + &Fuel
+    // &Result<Fuel, ZFuelError> + &Fuel
     type Output = FuelResult;
     fn add(self, rhs: &ZFuel) -> Self::Output {
         match self {
@@ -533,7 +600,7 @@ impl Add<&ZFuel> for &FuelResult {
 }
 
 impl AddAssign<ZFuel> for FuelResult {
-    // Result<Fuel, FuelError> += Fuel
+    // Result<Fuel, ZFuelError> += Fuel
     fn add_assign(&mut self, rhs: ZFuel) {
         *self = match self {
             Ok(lhs) => ZFuel::from(lhs) + rhs,
@@ -543,7 +610,7 @@ impl AddAssign<ZFuel> for FuelResult {
 }
 
 impl AddAssign<&ZFuel> for FuelResult {
-    // Result<Fuel, FuelError> += &Fuel
+    // Result<Fuel, ZFuelError> += &Fuel
     fn add_assign(&mut self, rhs: &ZFuel) {
         *self = match self {
             Ok(lhs) => ZFuel::from(lhs) + rhs,
@@ -559,7 +626,7 @@ impl Sub for ZFuel {
         Ok(match self.units.checked_sub(rhs.units) {
             Some(units) => ZFuel { units },
             None => {
-                return Err(FuelError::Range(format!(
+                return Err(ZFuelError::Range(format!(
                     "Overflow in subtraction of z Fuel amount {} - {}",
                     self, rhs
                 )))
@@ -593,7 +660,7 @@ impl Sub for &ZFuel {
 }
 
 impl Sub<FuelResult> for ZFuel {
-    // Fuel - Result<Fuel, FuelError>
+    // Fuel - Result<Fuel, ZFuelError>
     type Output = FuelResult;
     fn sub(self, other: Self::Output) -> Self::Output {
         match other {
@@ -604,7 +671,7 @@ impl Sub<FuelResult> for ZFuel {
 }
 
 impl Sub<FuelResult> for &ZFuel {
-    // &Fuel - Result<Fuel, FuelError>
+    // &Fuel - Result<Fuel, ZFuelError>
     type Output = FuelResult;
     fn sub(self, other: Self::Output) -> Self::Output {
         match other {
@@ -615,7 +682,7 @@ impl Sub<FuelResult> for &ZFuel {
 }
 
 impl Sub<&FuelResult> for ZFuel {
-    // Fuel - &Result<Fuel, FuelError>
+    // Fuel - &Result<Fuel, ZFuelError>
     type Output = FuelResult;
     fn sub(self, other: &Self::Output) -> Self::Output {
         match other {
@@ -626,7 +693,7 @@ impl Sub<&FuelResult> for ZFuel {
 }
 
 impl Sub<&FuelResult> for &ZFuel {
-    // &Fuel - &Result<Fuel, FuelError>
+    // &Fuel - &Result<Fuel, ZFuelError>
     type Output = FuelResult;
     fn sub(self, other: &Self::Output) -> Self::Output {
         match other {
@@ -637,7 +704,7 @@ impl Sub<&FuelResult> for &ZFuel {
 }
 
 impl Sub<ZFuel> for FuelResult {
-    // Result<Fuel, FuelError> - Fuel
+    // Result<Fuel, ZFuelError> - Fuel
     type Output = FuelResult;
     fn sub(self, rhs: ZFuel) -> Self::Output {
         match self {
@@ -648,7 +715,7 @@ impl Sub<ZFuel> for FuelResult {
 }
 
 impl Sub<&ZFuel> for FuelResult {
-    // Result<Fuel, FuelError> - &Fuel
+    // Result<Fuel, ZFuelError> - &Fuel
     type Output = FuelResult;
     fn sub(self, rhs: &ZFuel) -> Self::Output {
         match self {
@@ -659,7 +726,7 @@ impl Sub<&ZFuel> for FuelResult {
 }
 
 impl Sub<ZFuel> for &FuelResult {
-    // &Result<Fuel, FuelError> - Fuel
+    // &Result<Fuel, ZFuelError> - Fuel
     type Output = FuelResult;
     fn sub(self, rhs: ZFuel) -> Self::Output {
         match self {
@@ -670,7 +737,7 @@ impl Sub<ZFuel> for &FuelResult {
 }
 
 impl Sub<&ZFuel> for &FuelResult {
-    // &Result<Fuel, FuelError> - &Fuel
+    // &Result<Fuel, ZFuelError> - &Fuel
     type Output = FuelResult;
     fn sub(self, rhs: &ZFuel) -> Self::Output {
         match self {
@@ -681,7 +748,7 @@ impl Sub<&ZFuel> for &FuelResult {
 }
 
 impl SubAssign<ZFuel> for FuelResult {
-    // Result<Fuel, FuelError> -= Fuel
+    // Result<Fuel, ZFuelError> -= Fuel
     fn sub_assign(&mut self, rhs: ZFuel) {
         *self = match self {
             Ok(lhs) => ZFuel::from(lhs) - rhs,
@@ -691,7 +758,7 @@ impl SubAssign<ZFuel> for FuelResult {
 }
 
 impl SubAssign<&ZFuel> for FuelResult {
-    // Result<Fuel, FuelError> -= &Fuel
+    // Result<Fuel, ZFuelError> -= &Fuel
     fn sub_assign(&mut self, rhs: &ZFuel) {
         *self = match self {
             Ok(lhs) => ZFuel::from(lhs) - rhs,
@@ -768,11 +835,11 @@ impl Mul<Fraction> for ZFuel {
                     Some(extra) => Ok(ZFuel {
                         units: units + extra,
                     }),
-                    None => Err(FuelError::FractionOverflow((self, rhs))),
+                    None => Err(ZFuelError::FractionOverflow((self, rhs))),
                 },
-                None => Err(FuelError::FractionOverflow((self, rhs))),
+                None => Err(ZFuelError::FractionOverflow((self, rhs))),
             },
-            None => Err(FuelError::FractionOverflow((self, rhs))),
+            None => Err(ZFuelError::FractionOverflow((self, rhs))),
         }
     }
 }
@@ -802,7 +869,7 @@ impl Mul<&Fraction> for &ZFuel {
 }
 
 impl MulAssign<Fraction> for FuelResult {
-    // Result<Fuel, FuelError> *= Fraction
+    // Result<Fuel, ZFuelError> *= Fraction
     fn mul_assign(&mut self, rhs: Fraction) {
         *self = match self {
             Ok(lhs) => ZFuel::from(lhs) * rhs,
@@ -812,7 +879,7 @@ impl MulAssign<Fraction> for FuelResult {
 }
 
 impl MulAssign<&Fraction> for FuelResult {
-    // Result<Fuel, FuelError> *= &Fraction
+    // Result<Fuel, ZFuelError> *= &Fraction
     fn mul_assign(&mut self, rhs: &Fraction) {
         *self = match self {
             Ok(lhs) => ZFuel::from(lhs) * rhs,
@@ -1187,7 +1254,7 @@ pub mod tests {
         // 1/100,000,000th of a z Fuel, these rounding truncation errors will only be significant
         // when computing fees on exceedingly tiny transactions.
 
-        let feepct = Fraction::new(35, 1000).reduce();
+        let feepct = Fraction::new(35, 1000).unwrap().reduce();
         assert_eq!((feepct.numerator, feepct.denominator), (7, 200));
 
         // Observe that we end up losing precision on very small transactions, and always round up.
@@ -1238,36 +1305,36 @@ pub mod tests {
         };
 
         // Test all {T,&T} {*,/} {U,&U} combinations
-        match ZFuel::from(fuel::MAXVALUE) * Fraction::new(35, 1000).reduce() {
+        match ZFuel::from(fuel::MAXVALUE) * Fraction::new(35, 1000).unwrap().reduce() {
             Ok(f) => assert_eq!(format!("{}", f), "322818021289.917154"),
             Err(e) => panic!("Expected success, not {}", e),
         };
-        match &ZFuel::from(fuel::MAXVALUE) * Fraction::new(35, 1000).reduce() {
+        match &ZFuel::from(fuel::MAXVALUE) * Fraction::new(35, 1000).unwrap().reduce() {
             Ok(f) => assert_eq!(format!("{}", f), "322818021289.917154"),
             Err(e) => panic!("Expected success, not {}", e),
         };
-        match ZFuel::from(fuel::MAXVALUE) * &Fraction::new(35, 1000).reduce() {
+        match ZFuel::from(fuel::MAXVALUE) * &Fraction::new(35, 1000).unwrap().reduce() {
             Ok(f) => assert_eq!(format!("{}", f), "322818021289.917154"),
             Err(e) => panic!("Expected success, not {}", e),
         };
-        match &ZFuel::from(fuel::MAXVALUE) * &Fraction::new(35, 1000).reduce() {
+        match &ZFuel::from(fuel::MAXVALUE) * &Fraction::new(35, 1000).unwrap().reduce() {
             Ok(ref f) => assert_eq!(format!("{}", f), "322818021289.917154"),
             Err(e) => panic!("Expected success, not {}", e),
         };
 
-        match ZFuel::from(fuel::MAXVALUE) / Fraction::new(1000, 35).reduce() {
+        match ZFuel::from(fuel::MAXVALUE) / Fraction::new(1000, 35).unwrap().reduce() {
             Ok(f) => assert_eq!(format!("{}", f), "322818021289.917154"),
             Err(e) => panic!("Expected success, not {}", e),
         };
-        match &ZFuel::from(fuel::MAXVALUE) / Fraction::new(1000, 35).reduce() {
+        match &ZFuel::from(fuel::MAXVALUE) / Fraction::new(1000, 35).unwrap().reduce() {
             Ok(f) => assert_eq!(format!("{}", f), "322818021289.917154"),
             Err(e) => panic!("Expected success, not {}", e),
         };
-        match ZFuel::from(fuel::MAXVALUE) / &Fraction::new(1000, 35).reduce() {
+        match ZFuel::from(fuel::MAXVALUE) / &Fraction::new(1000, 35).unwrap().reduce() {
             Ok(f) => assert_eq!(format!("{}", f), "322818021289.917154"),
             Err(e) => panic!("Expected success, not {}", e),
         };
-        match &ZFuel::from(fuel::MAXVALUE) / &Fraction::new(1000, 35).reduce() {
+        match &ZFuel::from(fuel::MAXVALUE) / &Fraction::new(1000, 35).unwrap().reduce() {
             Ok(ref f) => assert_eq!(format!("{}", f), "322818021289.917154"),
             Err(e) => panic!("Expected success, not {}", e),
         };
@@ -1284,7 +1351,7 @@ pub mod tests {
         assert_eq!(
             format!(
                 "{}",
-                (ZFuel::new(100) * Fraction::new(fuel::MAXVALUE, 2)).unwrap_err()
+                (ZFuel::new(100) * Fraction::new(fuel::MAXVALUE, 2).unwrap()).unwrap_err()
             ),
             "Fuel overflow in ♓0.0001 * 9223372036854775807/2"
         );
