@@ -4,6 +4,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+## [0.2.2] - 2025-02-06
+### Update
+- holochain_wasmer_common updated to "0.0.99"
+
 ## [0.2.1] - 2025-02-03
 ### Update
 - added the check function for fuel type and updated Fractions to handle 0 denominators
