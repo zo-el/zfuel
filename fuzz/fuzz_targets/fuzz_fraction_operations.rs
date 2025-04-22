@@ -1,6 +1,5 @@
 #![no_main]
 use libfuzzer_sys::fuzz_target;
-use std::cmp;
 use zfuel::fraction::Fraction;
 
 fuzz_target!(|data: ((i64, i64), (i64, i64))| {

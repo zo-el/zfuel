@@ -1,6 +1,5 @@
 #![no_main]
 use libfuzzer_sys::fuzz_target;
-use std::ops::{Add, Sub};
 use zfuel::fuel::ZFuel;
 
 fuzz_target!(|data: i64| {
