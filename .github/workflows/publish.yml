@@ -11,6 +11,11 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: write # Required for creating releases and tags
+  packages: write # Required for publishing packages
+  actions: read # Required for checking workflow status
+
 jobs:
   publish:
     name: Publish to crates.io and create release
@@ -49,11 +54,23 @@ jobs:
             echo "Version ${{ steps.get_version.outputs.version }} is new"
           fi
 
+      - name: Verify GitHub token
+        run: |
+          if [ -z "${{ secrets.GITHUB_TOKEN }}" ]; then
+            echo "::error::GITHUB_TOKEN is not available"
+            exit 1
+          fi
+          echo "GITHUB_TOKEN is available"
+
       - name: Publish to crates.io
         if: steps.check_version.outputs.exists == 'false'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
+          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "::error::CARGO_REGISTRY_TOKEN is not set"
+            exit 1
+          fi
           cargo publish --token $CARGO_REGISTRY_TOKEN
 
       - name: Create GitHub Release
