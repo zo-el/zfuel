@@ -33,3 +33,31 @@ path = "fuzz_targets/fuzz_fuel_string.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fuzz_fuel_operations"
+path = "fuzz_targets/fuzz_fuel_operations.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_fraction_operations"
+path = "fuzz_targets/fuzz_fraction_operations.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_fee_calculations"
+path = "fuzz_targets/fuzz_fee_calculations.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_fuel_serialization"
+path = "fuzz_targets/fuzz_fuel_serialization.rs"
+test = false
+doc = false
+bench = false
