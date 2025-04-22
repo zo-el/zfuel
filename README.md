@@ -1,6 +1,57 @@
 # ZFuel
 
-A Rust library for handling ZFuel types in a mutual credit accounting system.
+A high-precision Rust library for handling ZFuel types in mutual credit accounting systems. ZFuel provides fixed-point arithmetic with 6 decimal places of precision, ensuring accurate financial calculations without floating-point rounding errors.
+
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Rust](https://github.com/zo-el/zfuel/actions/workflows/fuzz.yml/badge.svg)](https://github.com/zo-el/zfuel/actions/workflows/fuzz.yml)
+
+## Features
+
+- Fixed-point arithmetic with 6 decimal places precision
+- Full support for positive and negative values
+- Precise fee calculations with configurable rates
+- String parsing and formatting with full precision
+- Comprehensive test coverage including fuzz testing
+- No floating-point arithmetic, ensuring exact calculations
+- Bounds checking on all operations
+- Efficient implementation with zero-cost abstractions
+
+## Installation
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+zfuel = "0.2.2"
+```
+
+## Quick Start
+
+```rust
+use zfuel::{ZFuel, Fraction};
+
+// Create a ZFuel amount
+let amount = ZFuel::from_str("123.456789").unwrap();
+
+// Perform arithmetic operations
+let doubled = (amount + amount).unwrap();
+let half = (amount * Fraction::new(1, 2).unwrap()).unwrap();
+
+// Calculate fees (1%)
+let fee = (amount * Fraction::new(1, 100).unwrap()).unwrap();
+
+// Format as string
+println!("Amount: {}", amount);      // "123.456789"
+println!("Doubled: {}", doubled);    // "246.913578"
+println!("Half: {}", half);          // "61.728394"
+println!("Fee: {}", fee);            // "1.234567"
+```
+
+## Documentation
+
+- [API Documentation](https://docs.rs/zfuel)
+- [Technical Documentation](docs/technical.md) - Detailed implementation details
+- [CHANGELOG](CHANGELOG.md) - Version history and changes
 
 ## Development
 
@@ -9,7 +60,7 @@ A Rust library for handling ZFuel types in a mutual credit accounting system.
 - Rust (nightly toolchain)
 - cargo-fuzz
 
-### Installation
+### Setup
 
 ```bash
 # Install nightly toolchain
@@ -19,9 +70,9 @@ rustup install nightly
 cargo install cargo-fuzz
 ```
 
-### Running Tests
+### Testing
 
-The project includes both regular unit tests and fuzz tests. You can use the Makefile to run them:
+The project includes comprehensive test coverage:
 
 ```bash
 # Run all tests (unit tests and fuzz tests)
@@ -33,7 +84,7 @@ make test
 # Run only fuzz tests
 make fuzz
 
-# Run a specific fuzz test
+# Run specific fuzz tests
 make fuzz-fuzz_fuel
 make fuzz-fuzz_fraction
 make fuzz-fuzz_fuel_string
@@ -43,18 +94,22 @@ make fuzz-fuzz_fee_calculations
 make fuzz-fuzz_fuel_serialization
 ```
 
-### Fuzz Tests Coverage
+### Fuzz Testing
 
 The project includes several fuzz tests to ensure robustness:
 
-1. `fuzz_fuel`: Tests basic ZFuel creation
-2. `fuzz_fraction`: Tests Fraction creation and validation
-3. `fuzz_fuel_string`: Tests string parsing and validation
-4. `fuzz_fuel_operations`: Tests arithmetic operations and comparisons
-5. `fuzz_fraction_operations`: Tests fraction operations and conversions
-6. `fuzz_fee_calculations`: Tests basic fee-related operations
-7. `fuzz_fuel_serialization`: Tests serialization/deserialization
+1. `fuzz_fuel`: Basic ZFuel creation and validation
+2. `fuzz_fraction`: Fraction operations and validation
+3. `fuzz_fuel_string`: String parsing and validation
+4. `fuzz_fuel_operations`: Arithmetic operations
+5. `fuzz_fraction_operations`: Fraction arithmetic
+6. `fuzz_fee_calculations`: Fee computation
+7. `fuzz_fuel_serialization`: Serialization/deserialization
 
-### CI/CD
+## Contributing
 
-The project uses GitHub Actions to run all tests on every push and pull request to the main branch. The workflow is defined in `.github/workflows/fuzz.yml`.
+Contributions are welcome! Please see our [Contributing Guidelines](.github/CONTRIBUTING.md) for details.
+
+## License
+
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.

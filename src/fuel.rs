@@ -5,7 +5,6 @@
 
 use crate::error::ZFuelError;
 use crate::fraction::Fraction;
-// use crate::time::Period;
 use nom::{
     branch::alt,
     bytes::complete::tag,
@@ -17,7 +16,6 @@ use nom::{
 use regex::Regex;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use std::{
-    // collections::VecDeque,
     fmt,
     ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign},
     result,

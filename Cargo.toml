@@ -9,7 +9,7 @@ edition = "2021"
 
 [package]
 name = "zfuel"
-version = "0.2.2"
+version = "0.3.0"
 description = "ZFuel types used for a mutual credit accounting system"
 homepage = "https://github.com/zo-el/zfuel"
 license = "Apache-2.0"
