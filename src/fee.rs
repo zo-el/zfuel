@@ -21,11 +21,22 @@ pub fn tabulate_fee(amount: &ZFuel) -> Result<ZFuel, ZFuelError> {
 #[cfg(test)]
 pub mod tests {
     use crate::fee::*;
+    use crate::fuel::Precision;
 
     /// smoke test Fuel fees
     #[test]
     fn fee_smoke_test() {
-        let fee_tab = tabulate_fee(&ZFuel { units: 1_230_000 }).unwrap();
-        assert_eq!(fee_tab, ZFuel { units: 12_300 });
+        let fee_tab = tabulate_fee(&ZFuel {
+            units: 1_230_000,
+            precision: Precision::DEFAULT,
+        })
+        .unwrap();
+        assert_eq!(
+            fee_tab,
+            ZFuel {
+                units: 12_300,
+                precision: Precision::DEFAULT
+            }
+        );
     }
 }

@@ -1,6 +1,6 @@
 #![no_main]
 use libfuzzer_sys::fuzz_target;
-use zfuel::fuel::ZFuel;
+use zfuel::fuel::{Precision, ZFuel};
 
 fuzz_target!(|data: (i64, i64)| {
     // Skip invalid inputs that would cause immediate overflow
@@ -8,8 +8,8 @@ fuzz_target!(|data: (i64, i64)| {
         return;
     }
 
-    let fuel1 = ZFuel::new(data.0);
-    let fuel2 = ZFuel::new(data.1);
+    let fuel1 = ZFuel::new(data.0, Precision::DEFAULT);
+    let fuel2 = ZFuel::new(data.1, Precision::DEFAULT);
 
     // Test arithmetic operations using operators
     let _ = fuel1 + &fuel2;

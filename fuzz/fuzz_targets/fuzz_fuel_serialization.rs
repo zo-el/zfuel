@@ -1,7 +1,7 @@
 #![no_main]
 use libfuzzer_sys::fuzz_target;
 use std::str::FromStr;
-use zfuel::fuel::ZFuel;
+use zfuel::fuel::{Precision, ZFuel};
 
 fuzz_target!(|data: i64| {
     // Skip invalid inputs that would cause immediate overflow
@@ -9,7 +9,7 @@ fuzz_target!(|data: i64| {
         return;
     }
 
-    let fuel = ZFuel::new(data);
+    let fuel = ZFuel::new(data, Precision::DEFAULT);
     // Test serialization/deserialization
     let serialized = fuel.to_string();
     let _ = ZFuel::from_str(&serialized);

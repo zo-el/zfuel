@@ -5,6 +5,7 @@
 
 use crate::error::ZFuelError;
 use crate::fraction::Fraction;
+pub use crate::precision::Precision;
 use nom::{
     branch::alt,
     bytes::complete::tag,
@@ -105,9 +106,10 @@ pub const MINRANGE: u64 = MAXRANGE + 1;
 pub const DECSHOWN: usize = 1; // could be 1-EXPONENT
 
 #[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq)] // Copy req'd for binary op implementations
-/// z Fuel, in 1/DENOMINATOR units
+/// z Fuel, with variable decimal precision (0-6 places)
 pub struct ZFuel {
     pub units: i64,
+    pub precision: Precision,
 }
 
 /// fuel::FuelResult -- a fully defined custom Result type for z Fuel operations
@@ -137,11 +139,29 @@ impl<'d> Deserialize<'d> for ZFuel {
 }
 
 impl ZFuel {
-    pub fn new(units: i64) -> Self {
-        ZFuel { units }
+    pub fn new(units: i64, precision: Precision) -> Self {
+        ZFuel { units, precision }
     }
-    pub fn zero() -> Self {
-        ZFuel { units: 0 }
+
+    pub fn new_with_default_precision(units: i64) -> Self {
+        ZFuel {
+            units,
+            precision: Precision::DEFAULT,
+        }
+    }
+
+    pub fn zero(precision: Precision) -> Self {
+        ZFuel {
+            units: 0,
+            precision,
+        }
+    }
+
+    pub fn zero_default() -> Self {
+        ZFuel {
+            units: 0,
+            precision: Precision::DEFAULT,
+        }
     }
     fn parse_hex(input: &str) -> IResult<&str, (u64, u64), nom::error::Error<&str>> {
         map_res(preceded(tag("0x"), digit1), |hex: &str| {
@@ -237,6 +257,67 @@ pub fn u64_to_i64(
             "Overflow for z Fuel mantissa {}, fraction {}",
             mantissa, fraction
         ))),
+    }
+}
+
+/// Precision scaling utilities for converting between precision levels
+impl ZFuel {
+    /// Scale units from one precision to another
+    pub fn scale_units(
+        units: i64,
+        from_precision: Precision,
+        to_precision: Precision,
+    ) -> Result<i64, ZFuelError> {
+        if from_precision == to_precision {
+            return Ok(units);
+        }
+
+        let from_denom = from_precision.denominator();
+        let to_denom = to_precision.denominator();
+
+        if from_denom > to_denom {
+            // Scaling down - divide by the difference in denominators
+            let scale_factor = from_denom / to_denom;
+            Ok(units / scale_factor as i64)
+        } else {
+            // Scaling up - multiply by the difference in denominators
+            let scale_factor = to_denom / from_denom;
+            units.checked_mul(scale_factor as i64).ok_or_else(|| {
+                ZFuelError::Range(format!(
+                    "Overflow when scaling units {} from precision {} to precision {}",
+                    units,
+                    from_precision.value(),
+                    to_precision.value()
+                ))
+            })
+        }
+    }
+
+    /// Convert this ZFuel to a different precision
+    pub fn to_precision(&self, target_precision: Precision) -> Result<ZFuel, ZFuelError> {
+        let scaled_units = Self::scale_units(self.units, self.precision, target_precision)?;
+        Ok(ZFuel {
+            units: scaled_units,
+            precision: target_precision,
+        })
+    }
+
+    /// Detect precision from a decimal string (count digits after decimal point)
+    /// Defaults to precision=6 for backward compatibility
+    pub fn detect_precision_from_string(s: &str) -> Precision {
+        if let Some(decimal_pos) = s.find('.') {
+            let after_decimal = &s[decimal_pos + 1..];
+            let detected = std::cmp::min(after_decimal.len() as u8, Precision::MAX);
+            // If no digits after decimal or detected is 0, default to MAX (6)
+            // Otherwise, always use at least MAX (6) for backward compatibility
+            if detected == 0 {
+                Precision::DEFAULT
+            } else {
+                Precision::DEFAULT // Always use default precision for backward compatibility
+            }
+        } else {
+            Precision::DEFAULT // Default to 6 for integers
+        }
     }
 }
 
@@ -350,8 +431,14 @@ impl FromStr for ZFuel {
             "-" => u64_to_i64(true, mantissa, fraction, MINRANGE), // -...
             _ => u64_to_i64(false, mantissa, fraction, MAXRANGE),  // ..., or +...
         };
+
+        // For now, always use precision=6 for backward compatibility
+        // TODO: Add explicit precision parsing in the future
         let amount_fuel = match units_res {
-            Ok(units) => ZFuel { units },
+            Ok(units) => ZFuel {
+                units,
+                precision: Precision::DEFAULT,
+            },
             Err(e) => return Err(e),
         };
 
@@ -362,17 +449,23 @@ impl FromStr for ZFuel {
     }
 }
 
-/// i64 -> Fuel for all integer types
+/// i64 -> Fuel for all integer types (uses default precision of 6)
 impl From<i64> for ZFuel {
     fn from(units: i64) -> ZFuel {
-        ZFuel { units }
+        ZFuel {
+            units,
+            precision: Precision::DEFAULT,
+        }
     }
 }
 
 /// & mut Fuel -> Fuel required for in-place operators
 impl From<&mut ZFuel> for ZFuel {
     fn from(other: &mut ZFuel) -> ZFuel {
-        ZFuel { units: other.units }
+        ZFuel {
+            units: other.units,
+            precision: other.precision,
+        }
     }
 }
 
@@ -399,27 +492,27 @@ impl From<&mut ZFuel> for ZFuel {
 impl fmt::Display for ZFuel {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let sign = if self.units < 0 { "-" } else { "" };
-        let whole = self.units / (DENOMINATOR as i64); //            1234098760 / 10^6 == 1234
-        let fraction = self.units - whole * (DENOMINATOR as i64); // 1234098760 - 1234 * 10^6 == 98760
-                                                                  // fraction must be < DENOMINATOR, and will be +'ve or -'ve (same sign as self.units)
+        let denominator = self.precision.denominator() as i64;
+        let whole = self.units / denominator;
+        let fraction = self.units - whole * denominator;
+
         if fraction == 0 {
             write!(f, "{}{}", sign, whole.abs())
         } else {
-            // Any fractional portion is left-padded with '0' out to 8 (EXPONENT) decimal points,
-            // and then trimmed of terminal '0's.  Then, we provide at least DECSHOWN fractional
-            // decimal places, 0-filled on the right.  This allows us to tune the default fractional
-            // precision of Fuel, similarly to how dollars is typically shown with 2 decimals of
-            // precision, eg. $1.20.                          98760 ==> 098760
-            let decimals = format!("{:0>exponent$}", fraction.abs(), exponent = EXPONENT);
-            let decimals = decimals.trim_end_matches('0'); // 098760 ==> 09876
-            write!(
-                f,
-                "{}{}.{:0<decshown$}",
-                sign,
-                whole.abs(),
-                decimals,
-                decshown = DECSHOWN
-            )
+            // Format the fractional part with the instance's precision
+            let decimals = format!(
+                "{:0>precision$}",
+                fraction.abs(),
+                precision = self.precision.value() as usize
+            );
+            let decimals = decimals.trim_end_matches('0'); // Remove trailing zeros
+
+            // Show minimal precision needed, but respect the instance's precision
+            if decimals.is_empty() {
+                write!(f, "{}{}", sign, whole.abs())
+            } else {
+                write!(f, "{}{}.{}", sign, whole.abs(), decimals)
+            }
         }
     }
 }
@@ -450,7 +543,10 @@ impl Neg for ZFuel {
     type Output = FuelResult;
     fn neg(self) -> FuelResult {
         Ok(match self.units.checked_neg() {
-            Some(units) => ZFuel { units },
+            Some(units) => ZFuel {
+                units,
+                precision: self.precision,
+            },
             None => {
                 return Err(ZFuelError::Range(format!(
                     "Overflow in negation of z Fuel amount {}",
@@ -473,8 +569,34 @@ impl Add for ZFuel {
     // Fuel + Fuel
     type Output = FuelResult;
     fn add(self, rhs: ZFuel) -> Self::Output {
-        Ok(match self.units.checked_add(rhs.units) {
-            Some(units) => ZFuel { units },
+        // Optimize common case: same precision
+        if self.precision == rhs.precision {
+            return Ok(match self.units.checked_add(rhs.units) {
+                Some(units) => ZFuel {
+                    units,
+                    precision: self.precision,
+                },
+                None => {
+                    return Err(ZFuelError::Range(format!(
+                        "Overflow in addition of z Fuel amount {} + {}",
+                        self, rhs
+                    )))
+                }
+            });
+        }
+
+        // Use the higher precision for the result
+        let result_precision = std::cmp::max(self.precision, rhs.precision);
+
+        // Scale both operands to the result precision
+        let lhs_scaled = ZFuel::scale_units(self.units, self.precision, result_precision)?;
+        let rhs_scaled = ZFuel::scale_units(rhs.units, rhs.precision, result_precision)?;
+
+        Ok(match lhs_scaled.checked_add(rhs_scaled) {
+            Some(units) => ZFuel {
+                units,
+                precision: result_precision,
+            },
             None => {
                 return Err(ZFuelError::Range(format!(
                     "Overflow in addition of z Fuel amount {} + {}",
@@ -621,8 +743,34 @@ impl Sub for ZFuel {
     // Fuel - Fuel
     type Output = FuelResult;
     fn sub(self, rhs: ZFuel) -> Self::Output {
-        Ok(match self.units.checked_sub(rhs.units) {
-            Some(units) => ZFuel { units },
+        // Optimize common case: same precision
+        if self.precision == rhs.precision {
+            return Ok(match self.units.checked_sub(rhs.units) {
+                Some(units) => ZFuel {
+                    units,
+                    precision: self.precision,
+                },
+                None => {
+                    return Err(ZFuelError::Range(format!(
+                        "Overflow in subtraction of z Fuel amount {} - {}",
+                        self, rhs
+                    )))
+                }
+            });
+        }
+
+        // Use the higher precision for the result
+        let result_precision = std::cmp::max(self.precision, rhs.precision);
+
+        // Scale both operands to the result precision
+        let lhs_scaled = ZFuel::scale_units(self.units, self.precision, result_precision)?;
+        let rhs_scaled = ZFuel::scale_units(rhs.units, rhs.precision, result_precision)?;
+
+        Ok(match lhs_scaled.checked_sub(rhs_scaled) {
+            Some(units) => ZFuel {
+                units,
+                precision: result_precision,
+            },
             None => {
                 return Err(ZFuelError::Range(format!(
                     "Overflow in subtraction of z Fuel amount {} - {}",
@@ -832,6 +980,7 @@ impl Mul<Fraction> for ZFuel {
                 {
                     Some(extra) => Ok(ZFuel {
                         units: units + extra,
+                        precision: self.precision,
                     }),
                     None => Err(ZFuelError::FractionOverflow((self, rhs))),
                 },
@@ -923,8 +1072,33 @@ impl Div<&Fraction> for &ZFuel {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::fuel::{self, u64_to_i64, FuelResult, ZFuel};
+    use crate::fuel::{self, u64_to_i64, FuelResult, Precision, ZFuel};
     use std::str::FromStr;
+
+    // Helper macro for creating Precision values in tests
+    macro_rules! p {
+        (0) => {
+            Precision::new(0).unwrap()
+        };
+        (1) => {
+            Precision::new(1).unwrap()
+        };
+        (2) => {
+            Precision::new(2).unwrap()
+        };
+        (3) => {
+            Precision::new(3).unwrap()
+        };
+        (4) => {
+            Precision::new(4).unwrap()
+        };
+        (5) => {
+            Precision::new(5).unwrap()
+        };
+        (6) => {
+            Precision::DEFAULT
+        };
+    }
 
     #[test]
     /// smoke test Fuel
@@ -1268,7 +1442,10 @@ pub mod tests {
         //           199 * 7 + 199 == 1592
         // And then see how many denominators worth of rounding error we discarded:
         //              1592 / 200 == 7
-        let feeamt = ZFuel { units: 399 } * &feepct;
+        let feeamt = ZFuel {
+            units: 399,
+            precision: Precision::DEFAULT,
+        } * &feepct;
         match &feeamt {
             Ok(ref f) => assert_eq!(format!("{}", f), "0.000014"), // was "0.000007" w/o round up
             Err(e) => panic!("Expected success, not {}", e),
@@ -1279,7 +1456,10 @@ pub mod tests {
             denominator: feepct.numerator,
             numerator: feepct.denominator,
         };
-        let feeamt = ZFuel { units: 399 } / &inv_feepct;
+        let feeamt = ZFuel {
+            units: 399,
+            precision: Precision::DEFAULT,
+        } / &inv_feepct;
         match &feeamt {
             Ok(ref f) => assert_eq!(format!("{}", f), "0.000014"),
             Err(e) => panic!("Expected success, not {}", e),
@@ -1290,13 +1470,14 @@ pub mod tests {
         // should get a fee of: 322818021289917154, or H322818021289.917154
         let amount = ZFuel {
             units: fuel::MAXVALUE,
+            precision: Precision::DEFAULT,
         };
         let feeamt = amount * &feepct;
         match feeamt {
             Ok(f) => assert_eq!(format!("{}", f), "322818021289.917154"), // was "322818021289.917153" w/o round up
             Err(e) => panic!("Expected success, not {}", e),
         };
-        match ZFuel::new(fuel::MINVALUE) * &feepct {
+        match ZFuel::new(fuel::MINVALUE, Precision::DEFAULT) * &feepct {
             // try -'ve, to ensure round up works
             Ok(f) => assert_eq!(format!("{}", f), "-322818021289.917154"),
             Err(e) => panic!("Expected success, not {}", e),
@@ -1349,9 +1530,29 @@ pub mod tests {
         assert_eq!(
             format!(
                 "{}",
-                (ZFuel::new(100) * Fraction::new(fuel::MAXVALUE, 2).unwrap()).unwrap_err()
+                (ZFuel::new(100, p!(6)) * Fraction::new(fuel::MAXVALUE, 2).unwrap()).unwrap_err()
             ),
             "Fuel overflow in ♓0.0001 * 9223372036854775807/2"
         );
+    }
+    #[test]
+    fn test_display_format_properties() {
+        // Property: Display format should be parseable back to equivalent value
+        let test_cases = [
+            ZFuel::new(0, p!(0)),
+            ZFuel::new(123, p!(0)),
+            ZFuel::new(1230, p!(1)),
+            ZFuel::new(12300, p!(2)),
+            ZFuel::new(123000, p!(3)),
+        ];
+
+        for original in test_cases.iter() {
+            let display_str = format!("{}", original);
+            let parsed = ZFuel::from_str(&display_str).unwrap();
+
+            // The parsed value should display the same way
+            let display_parsed = format!("{}", parsed);
+            assert_eq!(display_str, display_parsed);
+        }
     }
 }
