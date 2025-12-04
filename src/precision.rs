@@ -1,7 +1,8 @@
 use crate::error::ZFuelError;
+use serde::{Deserialize, Serialize};
 
 /// Precision type for ZFuel, representing decimal places (0-6)
-#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Debug)]
 pub struct Precision(u8);
 
 impl Precision {
@@ -107,11 +108,11 @@ pub mod tests {
         assert_eq!(f6.precision, Precision::DEFAULT);
 
         // Test zero constructors
-        let z0 = ZFuel::zero(p!(0));
+        let z0 = ZFuel::zero_precision(p!(0));
         assert_eq!(z0.units, 0);
         assert_eq!(z0.precision, p!(0));
 
-        let z6 = ZFuel::zero_default();
+        let z6 = ZFuel::zero();
         assert_eq!(z6.units, 0);
         assert_eq!(z6.precision, Precision::DEFAULT);
     }
@@ -239,7 +240,7 @@ pub mod tests {
             let f = ZFuel::new(123, precision);
             assert_eq!(f.precision, precision);
 
-            let z = ZFuel::zero(precision);
+            let z = ZFuel::zero_precision(precision);
             assert_eq!(z.precision, precision);
             assert_eq!(z.units, 0);
         }
@@ -280,7 +281,7 @@ pub mod tests {
 
         // Property: Addition with zero is identity
         let original = ZFuel::new(12345, p!(4));
-        let zero = ZFuel::zero(p!(4));
+        let zero = ZFuel::zero_precision(p!(4));
         let result = (original + zero).unwrap();
         assert_eq!(original.units, result.units);
         assert_eq!(

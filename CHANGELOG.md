@@ -3,6 +3,17 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2025-12-04
+
+### Added
+
+- Serialization support for `Precision` type (`Serialize` and `Deserialize` derives)
+
+### Changed
+
+- `ZFuel::zero()` now uses default precision (no parameter required) for improved API ergonomics
+- `ZFuel::zero_default()` renamed to `ZFuel::zero_precision(precision: Precision)` for clarity
+
 ## [0.4.0] - 2025-01-XX
 
 ### Added

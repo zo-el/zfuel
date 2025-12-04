@@ -150,17 +150,17 @@ impl ZFuel {
         }
     }
 
-    pub fn zero(precision: Precision) -> Self {
-        ZFuel {
-            units: 0,
-            precision,
-        }
-    }
-
-    pub fn zero_default() -> Self {
+    pub fn zero() -> Self {
         ZFuel {
             units: 0,
             precision: Precision::DEFAULT,
+        }
+    }
+
+    pub fn zero_precision(precision: Precision) -> Self {
+        ZFuel {
+            units: 0,
+            precision,
         }
     }
     fn parse_hex(input: &str) -> IResult<&str, (u64, u64), nom::error::Error<&str>> {
