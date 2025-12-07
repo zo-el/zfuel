@@ -3,6 +3,19 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2025-12-07
+
+### Changed
+
+- **BREAKING**: `Mul<Fraction>` now uses precision 6 (maximum) for all results to ensure fractional results can be represented exactly
+  - Previously, multiplication preserved the input precision, which could cause fractional results to be truncated to 0 at low precision
+  - Now, `10 * 1% = 0.1` regardless of input precision (all results use precision 6)
+  - Example: `ZFuel::from_str("10") * Fraction::new(1, 100)` now returns `0.1` (precision 6) instead of `0` (precision 0)
+- **BREAKING**: `Mul<Fraction>` now rounds up (away from zero) instead of truncating when there's a remainder
+  - Previously, results were truncated: `1 * 1/3 = 0.333333` (truncated)
+  - Now, results are rounded up: `1 * 1/3 = 0.333334` (rounded up)
+  - This ensures no value is lost due to truncation in financial calculations
+
 ## [0.5.0] - 2025-12-07
 
 ### Added

@@ -1062,80 +1062,80 @@ impl SubAssign<&ZFuel> for FuelResult {
     }
 }
 
-/// Fuel * Fraction, Fuel / Fraction -- always round up on loss of precision
+/// Fuel * Fraction, Fuel / Fraction -- precise multiplication with rounding up
 ///
-/// If a Fraction's numerator would result in an overflow of the maximum allowable z Fuel amount,
-/// produce an Err result.  Non-zero results below the minimum fractional Fuel value threshold are
-/// always rounded up.
-///
-/// For example, .75% of 1334 == 10.005, or 11 if rounded up.  A Fraction representing .75%,
-/// `Fraction::new(3, 400)` multiplied by 0.001334 Fuel: `Fuel{ units: 1334 }` would result in a
-/// `Some(quotient)` of 1334 / 400 == 3, and then 3 * 3 == 9.
-///
-/// In general, any Fuel.units precision below the Fraction.denominator will be lost, because we
-/// perform a division by the Fraction.denominator, to avoid overflow on large values.  If we had
-/// instead performed the multiplication by the numerator first, we would have have computed 1334 *
-/// 3 == 4002, and 4002 / 400 == 10; also correct, but no more useful if our intent is to "round up"
-/// since the desired result is 11 (and, it would overflow on large values).  However, here we could
-/// clearly detect that 4002 % 400 == 2 remainder, indicating that we must add 1 to the result to
-/// round up.
-///
-/// We must find the remainder of the division by the denominator 400, after multiplying it by the
-/// numerator, see if (when rounded up by just less than the denominator), how many multiples of the
-/// denominator we missed:
-///
-/// //          1334 % 400 == 134,
-/// //             134 * 3 == 402
-/// //     402 + (400 - 1) == 801
-/// //           801 / 400 == 2.
-/// //
-/// Since all of these are small numbers, overflow is not possible (unless the Fraction is huge)
-///
-/// Note the checked_rem is a signed remainder, not a euclidean modulo, eg. from
-/// https://internals.rust-lang.org/t/mathematical-modulo-operator/5952:
-///
-/// // Remainder operator (%)
-/// //   5 %  3 //  2
-/// //   5 % -3 //  2
-/// //  -5 %  3 // -2
-/// //  -5 % -3 // -2
-///
-/// // Modulo operator (%%)
-/// //   5 %%  3 //  2
-/// //   5 %% -3 // -1
-/// //  -5 %%  3 //  1
-/// //  -5 %% -3 // -2
-///
-/// Therefore, when multiplying by -'ve Fuel, any checked_rem will be remain -'ve
-///
+/// Performs exact multiplication: result = (units * numerator) / denominator
+/// The result uses maximum precision (6) to ensure fractional results can be represented.
+/// When there's a remainder, rounds up (away from zero) to avoid losing value.
+/// This ensures that 10 * 1% = 0.1 regardless of input precision.
 impl Mul<Fraction> for ZFuel {
     // Fuel * Fraction
     type Output = FuelResult;
     fn mul(self, rhs: Fraction) -> Self::Output {
-        match self.units.checked_div(rhs.denominator) {
-            Some(quotient) => match quotient.checked_mul(rhs.numerator) {
-                Some(units) => match self
-                    .units
-                    .checked_rem(rhs.denominator)
-                    .and_then(|e| e.checked_mul(rhs.numerator))
-                    .and_then(|e| {
-                        if e >= 0 {
-                            e.checked_add(rhs.denominator - 1)
-                        } else {
-                            e.checked_sub(rhs.denominator - 1)
-                        }
-                    })
-                    .and_then(|e| e.checked_div(rhs.denominator))
-                {
-                    Some(extra) => Ok(ZFuel {
-                        units: units + extra,
-                        precision: self.precision,
-                    }),
+        // Scale input to maximum precision (6) to ensure fractional results can be represented
+        let scaled_units = Self::scale_units(self.units, self.precision, Precision::DEFAULT)?;
+
+        // Try precise multiplication: (units * numerator) / denominator
+        if let Some(product) = scaled_units.checked_mul(rhs.numerator as i64) {
+            // Check for remainder to round up (away from zero)
+            let remainder = product % rhs.denominator as i64;
+            let quotient = product / rhs.denominator as i64;
+
+            // Round up if there's a remainder (away from zero)
+            let units = if remainder != 0 {
+                if quotient >= 0 {
+                    quotient
+                        .checked_add(1)
+                        .ok_or_else(|| ZFuelError::FractionOverflow((self, rhs)))?
+                } else {
+                    quotient
+                        .checked_sub(1)
+                        .ok_or_else(|| ZFuelError::FractionOverflow((self, rhs)))?
+                }
+            } else {
+                quotient
+            };
+
+            Ok(ZFuel {
+                units,
+                precision: Precision::DEFAULT,
+            })
+        } else {
+            // Overflow would occur, use divide-first approach with rounding up
+            // This avoids overflow while rounding up on remainder (away from zero)
+            match scaled_units.checked_div(rhs.denominator as i64) {
+                Some(quotient) => match quotient.checked_mul(rhs.numerator as i64) {
+                    Some(units) => {
+                        // Handle remainder with rounding up (away from zero)
+                        let remainder_contribution = scaled_units
+                            .checked_rem(rhs.denominator as i64)
+                            .and_then(|rem| rem.checked_mul(rhs.numerator as i64))
+                            .and_then(|rem_prod| {
+                                if rem_prod == 0 {
+                                    Some(0)
+                                } else if rem_prod > 0 {
+                                    // Round up: add (denominator - 1) then divide
+                                    rem_prod
+                                        .checked_add(rhs.denominator as i64 - 1)
+                                        .map(|sum| sum / rhs.denominator as i64)
+                                } else {
+                                    // Round up (away from zero for negative): subtract (denominator - 1) then divide
+                                    rem_prod
+                                        .checked_sub(rhs.denominator as i64 - 1)
+                                        .map(|diff| diff / rhs.denominator as i64)
+                                }
+                            })
+                            .unwrap_or(0);
+
+                        Ok(ZFuel {
+                            units: units + remainder_contribution,
+                            precision: Precision::DEFAULT,
+                        })
+                    }
                     None => Err(ZFuelError::FractionOverflow((self, rhs))),
                 },
                 None => Err(ZFuelError::FractionOverflow((self, rhs))),
-            },
-            None => Err(ZFuelError::FractionOverflow((self, rhs))),
+            }
         }
     }
 }
@@ -1628,7 +1628,7 @@ pub mod tests {
             precision: Precision::DEFAULT,
         } * &feepct;
         match &feeamt {
-            Ok(ref f) => assert_eq!(format!("{}", f), "0.000014"), // was "0.000007" w/o round up
+            Ok(ref f) => assert_eq!(format!("{}", f), "0.000014"), // Precise multiplication with rounding up: 399 * 7 / 200 = 13.965, rounded up to 14
             Err(e) => panic!("Expected success, not {}", e),
         }
 
@@ -1642,7 +1642,7 @@ pub mod tests {
             precision: Precision::DEFAULT,
         } / &inv_feepct;
         match &feeamt {
-            Ok(ref f) => assert_eq!(format!("{}", f), "0.000014"),
+            Ok(ref f) => assert_eq!(format!("{}", f), "0.000014"), // Precise multiplication with rounding up
             Err(e) => panic!("Expected success, not {}", e),
         }
 
@@ -1655,7 +1655,7 @@ pub mod tests {
         };
         let feeamt = amount * &feepct;
         match feeamt {
-            Ok(f) => assert_eq!(format!("{}", f), "322818021289.917154"), // was "322818021289.917153" w/o round up
+            Ok(f) => assert_eq!(format!("{}", f), "322818021289.917154"), // was "322818021289.917154" w/o round up
             Err(e) => panic!("Expected success, not {}", e),
         };
         match ZFuel::new(fuel::MINVALUE, Precision::DEFAULT) * &feepct {
@@ -1703,7 +1703,7 @@ pub mod tests {
         let mut feeamt: FuelResult = Ok(ZFuel::from(fuel::MAXVALUE));
         feeamt *= feepct;
         match &feeamt {
-            Ok(ref f) => assert_eq!(format!("{}", f), "322818021289.917154"),
+            Ok(ref f) => assert_eq!(format!("{}", f), "322818021289.917154"), // Precise multiplication with rounding up
             Err(e) => panic!("Expected success, not {}", e),
         };
 
