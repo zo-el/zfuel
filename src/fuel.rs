@@ -105,7 +105,7 @@ pub const MINRANGE: u64 = MAXRANGE + 1;
 // DECSHOWN -- default number of decimal places desired after '.' in Display values
 pub const DECSHOWN: usize = 1; // could be 1-EXPONENT
 
-#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq)] // Copy req'd for binary op implementations
+#[derive(Clone, Copy)] // Copy req'd for binary op implementations
 /// z Fuel, with variable decimal precision (0-6 places)
 pub struct ZFuel {
     pub units: i64,
@@ -302,21 +302,80 @@ impl ZFuel {
         })
     }
 
+    /// Check if this ZFuel value is valid for the expected precision
+    ///
+    /// Returns `true` if the value can be represented at the expected precision without losing information.
+    ///
+    /// # Rules:
+    /// - If actual precision <= expected precision: always valid (can represent lower precision at higher precision)
+    /// - If actual precision > expected precision: valid only if the extra decimal places are all zeros
+    ///
+    /// # Examples:
+    /// ```
+    /// use zfuel::fuel::{ZFuel, Precision};
+    ///
+    /// // Precision 0 (integer) is valid for precision 6
+    /// let value = ZFuel::new(123, Precision::new(0).unwrap());
+    /// assert!(value.is_valid_precision(Precision::new(6).unwrap()));
+    ///
+    /// // Precision 2 is valid for precision 6
+    /// let value = ZFuel::new(12345, Precision::new(2).unwrap()); // 123.45
+    /// assert!(value.is_valid_precision(Precision::new(6).unwrap()));
+    ///
+    /// // Precision 3 with trailing zero is valid for precision 2
+    /// let value = ZFuel::new(123450, Precision::new(3).unwrap()); // 123.450
+    /// assert!(value.is_valid_precision(Precision::new(2).unwrap()));
+    ///
+    /// // Precision 3 with non-zero third decimal is invalid for precision 2
+    /// let value = ZFuel::new(123456, Precision::new(3).unwrap()); // 123.456
+    /// assert!(!value.is_valid_precision(Precision::new(2).unwrap()));
+    /// ```
+    pub fn is_valid_precision(&self, expected_precision: Precision) -> bool {
+        let actual_precision = self.precision.value();
+        let expected = expected_precision.value();
+
+        // If actual precision is less than or equal to expected, always valid
+        if actual_precision <= expected {
+            return true;
+        }
+
+        // Actual precision is greater than expected - check if extra digits are zeros
+        // We need to check if the last (actual_precision - expected) decimal places are all zeros
+        let extra_digits = actual_precision - expected;
+        let divisor = 10_u64.pow(extra_digits as u32) as i64;
+
+        // Check if units are divisible by 10^(extra_digits)
+        // This means the last 'extra_digits' decimal places are all zeros
+        self.units % divisor == 0
+    }
+
     /// Detect precision from a decimal string (count digits after decimal point)
-    /// Defaults to precision=6 for backward compatibility
+    /// Trailing zeros are significant, so "123.450" has precision 3, not 2
+    /// Integers (no decimal point) have precision 0
+    /// Hex values (0x...) use default precision 6 since they represent raw units
     pub fn detect_precision_from_string(s: &str) -> Precision {
+        // Hex values represent raw units in precision 6 format
+        // Check for hex after trimming whitespace and sign
+        let trimmed = s
+            .trim_start()
+            .trim_start_matches('-')
+            .trim_start_matches('+');
+        if trimmed.starts_with("0x") || s.contains('H') || s.contains('♓') {
+            return Precision::DEFAULT;
+        }
+
         if let Some(decimal_pos) = s.find('.') {
             let after_decimal = &s[decimal_pos + 1..];
             let detected = std::cmp::min(after_decimal.len() as u8, Precision::MAX);
-            // If no digits after decimal or detected is 0, default to MAX (6)
-            // Otherwise, always use at least MAX (6) for backward compatibility
+            // If no digits after decimal, default to 0 precision
             if detected == 0 {
-                Precision::DEFAULT
+                Precision::new(0).unwrap_or(Precision::DEFAULT)
             } else {
-                Precision::DEFAULT // Always use default precision for backward compatibility
+                Precision::new(detected).unwrap_or(Precision::DEFAULT)
             }
         } else {
-            Precision::DEFAULT // Default to 6 for integers
+            // No decimal point means precision 0 (integer)
+            Precision::new(0).unwrap_or(Precision::DEFAULT)
         }
     }
 }
@@ -432,13 +491,25 @@ impl FromStr for ZFuel {
             _ => u64_to_i64(false, mantissa, fraction, MAXRANGE),  // ..., or +...
         };
 
-        // For now, always use precision=6 for backward compatibility
-        // TODO: Add explicit precision parsing in the future
+        // Detect precision from the input string to preserve it during deserialization
+        let detected_precision = Self::detect_precision_from_string(amount);
+
         let amount_fuel = match units_res {
-            Ok(units) => ZFuel {
-                units,
-                precision: Precision::DEFAULT,
-            },
+            Ok(units) => {
+                // Scale units to match the detected precision
+                // The units are currently in precision 6 format, so we need to scale them
+                let scaled_units = if detected_precision != Precision::DEFAULT {
+                    // Scale from precision 6 to detected precision
+                    Self::scale_units(units, Precision::DEFAULT, detected_precision)?
+                } else {
+                    units
+                };
+
+                ZFuel {
+                    units: scaled_units,
+                    precision: detected_precision,
+                }
+            }
             Err(e) => return Err(e),
         };
 
@@ -519,7 +590,85 @@ impl fmt::Display for ZFuel {
 
 impl fmt::Debug for ZFuel {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Fuel({})", self)
+        write!(f, "Fuel({}) precision({})", self, self.precision.value())
+    }
+}
+
+/// PartialEq implementation for value-based equality
+///
+/// Compares ZFuel values by their numeric value, ignoring precision differences.
+/// Returns `false` if scaling fails (e.g., due to overflow), indicating the values
+/// are not equal.
+impl PartialEq for ZFuel {
+    fn eq(&self, other: &ZFuel) -> bool {
+        // If precisions are the same, just compare units directly
+        if self.precision == other.precision {
+            return self.units == other.units;
+        }
+
+        // Scale both to the same precision (use the higher one to avoid losing precision)
+        let target_precision = std::cmp::max(self.precision, other.precision);
+        let self_scaled = match Self::scale_units(self.units, self.precision, target_precision) {
+            Ok(v) => v,
+            Err(_) => return false, // If scaling fails, values are not equal
+        };
+        let other_scaled = match Self::scale_units(other.units, other.precision, target_precision) {
+            Ok(v) => v,
+            Err(_) => return false, // If scaling fails, values are not equal
+        };
+        self_scaled == other_scaled
+    }
+}
+
+/// Eq implementation for value-based equality
+///
+/// Provides total equality of ZFuel values by their numeric value.
+/// This implementation assumes that scaling will always succeed for valid ZFuel values.
+impl Eq for ZFuel {}
+
+/// PartialOrd implementation for value-based comparison
+///
+/// Compares ZFuel values by their numeric value, ignoring precision differences.
+/// Returns `None` if scaling fails (e.g., due to overflow), indicating the values
+/// cannot be compared.
+impl PartialOrd for ZFuel {
+    fn partial_cmp(&self, other: &ZFuel) -> Option<std::cmp::Ordering> {
+        // If precisions are the same, just compare units directly
+        if self.precision == other.precision {
+            return Some(self.units.cmp(&other.units));
+        }
+
+        // Scale both to the same precision (use the higher one to avoid losing precision)
+        let target_precision = std::cmp::max(self.precision, other.precision);
+        let self_scaled = Self::scale_units(self.units, self.precision, target_precision).ok()?;
+        let other_scaled =
+            Self::scale_units(other.units, other.precision, target_precision).ok()?;
+        Some(self_scaled.cmp(&other_scaled))
+    }
+}
+
+/// Ord implementation for value-based comparison
+///
+/// Provides total ordering of ZFuel values by their numeric value.
+/// This implementation assumes that scaling will always succeed for valid ZFuel values.
+/// If scaling fails, the comparison will panic (which should not happen in practice
+/// for values within the valid range).
+impl Ord for ZFuel {
+    fn cmp(&self, other: &ZFuel) -> std::cmp::Ordering {
+        // If precisions are the same, just compare units directly
+        if self.precision == other.precision {
+            return self.units.cmp(&other.units);
+        }
+
+        // Scale both to the same precision (use the higher one to avoid losing precision)
+        let target_precision = std::cmp::max(self.precision, other.precision);
+        // For Ord, we expect scaling to always succeed for valid values
+        // If it fails, we'll get a panic, which is appropriate for Ord
+        let self_scaled = Self::scale_units(self.units, self.precision, target_precision)
+            .expect("Scaling failed in Ord::cmp - this should not happen for valid ZFuel values");
+        let other_scaled = Self::scale_units(other.units, other.precision, target_precision)
+            .expect("Scaling failed in Ord::cmp - this should not happen for valid ZFuel values");
+        self_scaled.cmp(&other_scaled)
     }
 }
 
@@ -1105,7 +1254,9 @@ pub mod tests {
     fn fuel_smoke_test() {
         let f1 = ZFuel::from_str("1.0").unwrap();
         //let f1 = ZFuel::from_str( "0x5f5e100" ).unwrap();
-        assert_eq!(f1.units, 1 * fuel::DENOMINATOR as i64);
+        // "1.0" has precision 1, so units = 1 * 10 = 10
+        assert_eq!(f1.units, 10);
+        assert_eq!(f1.precision.value(), 1);
         // Whole numbered values do not include fractional precision
         let d1 = format!("{}", f1);
         assert_eq!(
@@ -1137,7 +1288,9 @@ pub mod tests {
 
         // Extending out fractions to fill at leas
         let f3 = ZFuel::from_str("999.5").unwrap();
-        assert_eq!(f3.units, 999_500_000_i64);
+        // "999.5" has precision 1, so units = 999 * 10 + 5 = 9995
+        assert_eq!(f3.units, 9995_i64);
+        assert_eq!(f3.precision.value(), 1);
 
         let d3 = format!("{}", f3);
         assert_eq!(
@@ -1171,19 +1324,19 @@ pub mod tests {
 
         assert_eq!(
             format!("{:?}", ZFuel::from_str(&"9223372036854.775807")),
-            "Ok(Fuel(9223372036854.775807))"
+            "Ok(Fuel(9223372036854.775807) precision(6))"
         );
         assert_eq!(
             format!("{:?}", ZFuel::from_str(&"0x7fffffffffffffff")),
-            "Ok(Fuel(9223372036854.775807))"
+            "Ok(Fuel(9223372036854.775807) precision(6))"
         );
         assert_eq!(
             format!("{:?}", ZFuel::from_str(&"-9223372036854.775808")),
-            "Ok(Fuel(-9223372036854.775808))"
+            "Ok(Fuel(-9223372036854.775808) precision(6))"
         );
         assert_eq!(
             format!("{:?}", ZFuel::from_str(&"-0x8000000000000000")),
-            "Ok(Fuel(-9223372036854.775808))"
+            "Ok(Fuel(-9223372036854.775808) precision(6))"
         );
 
         match ZFuel::from_str( &"9223372036854.775808" ) { // MAXRANGE + 1
@@ -1399,6 +1552,34 @@ pub mod tests {
         assert_eq!(ZFuel::from(1_000_000) == ZFuel::from(1_000_000), true);
         assert_eq!(ZFuel::from(1_000_000) <= ZFuel::from(1_000_000), true);
         assert_eq!(ZFuel::from(1_000_000) >= ZFuel::from(1_000_000), true);
+    }
+
+    #[test]
+    fn fuel_comparisons_value_based() {
+        // Test that operators now use value-based comparison (ignoring precision)
+        let a = ZFuel::new(10, Precision::new(0).unwrap()); // 10
+        let b = ZFuel::new(10000000, Precision::new(6).unwrap()); // 10.000000
+        assert_eq!(a == b, true); // Value-based equality: 10 == 10.000000
+        assert_eq!(a < b, false); // Value-based: 10 is not < 10.000000
+        assert_eq!(a > b, false); // Value-based: 10 is not > 10.000000
+        assert_eq!(a <= b, true); // Value-based: 10 <= 10.000000
+        assert_eq!(a >= b, true); // Value-based: 10 >= 10.000000
+
+        // Test with different values
+        let c = ZFuel::new(12345, Precision::new(2).unwrap()); // 123.45
+        let d = ZFuel::new(12346000, Precision::new(3).unwrap()); // 123.460
+        assert_eq!(c < d, true); // 123.45 < 123.460
+        assert_eq!(c > d, false);
+        assert_eq!(c <= d, true);
+        assert_eq!(c >= d, false);
+
+        // Test with same precision (should work as before)
+        let e = ZFuel::new(100, Precision::new(2).unwrap());
+        let f = ZFuel::new(200, Precision::new(2).unwrap());
+        assert_eq!(e < f, true);
+        assert_eq!(e > f, false);
+        assert_eq!(e <= f, true);
+        assert_eq!(e >= f, false);
     }
 
     use crate::fraction::Fraction;

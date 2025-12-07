@@ -3,6 +3,29 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2025-12-07
+
+### Added
+
+- `is_valid_precision()` method to check if a ZFuel value can be represented at an expected precision
+- Precision information in Debug output (`Fuel(123.45) precision(2)`)
+- Precision preservation during serialization/deserialization - precision is now detected from string format
+
+### Changed
+
+- **BREAKING**: Comparison operators (`==`, `!=`, `<`, `>`, `<=`, `>=`) now use value-based comparison, ignoring precision differences
+  - Previously, `ZFuel(10, precision=0) == ZFuel(10, precision=6)` would return `false`
+  - Now, `ZFuel(10, precision=0) == ZFuel(10, precision=6)` returns `true` (same numeric value)
+- `from_str()` now detects and preserves precision from the input string
+  - `"123.45"` is parsed with precision 2
+  - `"123.450"` is parsed with precision 3 (trailing zeros are significant)
+  - Hex values (`0x...`) use default precision 6
+
+### Fixed
+
+- Precision is now preserved when serializing and deserializing ZFuel values
+- String parsing now correctly detects precision from the number of decimal places
+
 ## [0.4.1] - 2025-12-04
 
 ### Added
