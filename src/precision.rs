@@ -27,6 +27,14 @@ impl Precision {
         }
     }
 
+    pub fn new_min() -> Self {
+        Precision(Self::MIN)
+    }
+
+    pub fn new_max() -> Self {
+        Precision(Self::MAX)
+    }
+
     /// Get the underlying u8 value
     pub fn value(self) -> u8 {
         self.0
