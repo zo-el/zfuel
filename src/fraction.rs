@@ -87,7 +87,21 @@ impl cmp::Eq for Fraction {}
 
 impl cmp::PartialOrd for Fraction {
     fn partial_cmp(&self, other: &Fraction) -> Option<cmp::Ordering> {
-        self.to_decimal().partial_cmp(&other.to_decimal())
+        Some(self.cmp(other))
+    }
+}
+
+impl cmp::Ord for Fraction {
+    /// Total ordering on fractions. Compares via exact cross-multiplication in
+    /// `i128` rather than `f64` to stay consistent with `PartialEq` for large
+    /// numerators/denominators (casting `i64` to `f64` loses precision once
+    /// values exceed 2^53, which previously allowed `a == b` and `a > b` to be
+    /// true simultaneously). `Fraction::new` normalizes `denominator > 0`, so
+    /// no sign-flip is required.
+    fn cmp(&self, other: &Fraction) -> cmp::Ordering {
+        let lhs = (self.numerator as i128) * (other.denominator as i128);
+        let rhs = (other.numerator as i128) * (self.denominator as i128);
+        lhs.cmp(&rhs)
     }
 }
 
@@ -409,6 +423,34 @@ mod tests {
         let a = Fraction::new(-1, 2).unwrap();
         let b = Fraction::new(1, -2).unwrap();
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn ordering_is_consistent_with_equality_for_large_values() {
+        // Regression: previously `partial_cmp` went through f64, which lost precision
+        // for numerators/denominators above 2^53 and produced `a == b` and `a > b`
+        // simultaneously. These inputs come from a libFuzzer crash on
+        // fuzz_fraction_operations and must be ordered as Equal.
+        let f1 = Fraction::new(1_808_504_320_951_910_400, 1_808_504_320_951_916_825).unwrap();
+        let f2 = Fraction::new(6_799_976_246_779_183_104, 6_799_976_246_779_207_262).unwrap();
+        assert_eq!(f1, f2);
+        assert!(!(f1 < f2));
+        assert!(!(f1 > f2));
+        assert_eq!(f1.partial_cmp(&f2), Some(cmp::Ordering::Equal));
+    }
+
+    #[test]
+    fn ordering_does_not_overflow_at_i64_extremes() {
+        // i64::MAX * i64::MAX fits in i128, so cross-multiplication is safe.
+        let a = Fraction::new(i64::MAX, i64::MAX).unwrap(); // == 1
+        let b = Fraction::new(1, 1).unwrap();
+        assert_eq!(a, b);
+        assert_eq!(a.partial_cmp(&b), Some(cmp::Ordering::Equal));
+
+        let neg_huge = Fraction::new(i64::MIN, 1).unwrap();
+        let pos_huge = Fraction::new(i64::MAX, 1).unwrap();
+        assert!(neg_huge < pos_huge);
+        assert!(pos_huge > neg_huge);
     }
 
     // ---- Arithmetic ----
