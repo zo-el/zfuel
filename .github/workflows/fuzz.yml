@@ -32,6 +32,7 @@ jobs:
           - fuzz_fraction_operations
           - fuzz_fee_calculations
           - fuzz_fuel_serialization
+          - fuzz_invariant
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
@@ -50,7 +51,13 @@ jobs:
           key: fuzz-${{ matrix.target }}
 
       - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked
+        # NOTE: `--locked` is intentionally omitted. The lockfile shipped with the
+        # cargo-fuzz release pins ancient transitive deps (e.g. `rustix 0.36.5`) whose
+        # `cfg_attr(rustc_attrs, rustc_layout_scalar_valid_range_*)` usage is no longer
+        # accepted by current nightly rustc — the install would fail to build before
+        # any fuzz target ran. Letting cargo resolve fresh transitive versions keeps
+        # the install compatible with whichever nightly the matrix happens to pull.
+        run: cargo install cargo-fuzz
 
       - name: Run regular tests
         run: cargo test --all --verbose
