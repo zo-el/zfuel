@@ -3,6 +3,22 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-05-18
+
+### Changed
+
+- Release automation now gates publishing on successful CI: publish runs only
+  after both `rust-tests` and `fuzz-testing` complete successfully on `main`,
+  and only when the `Cargo.toml` version is not already tagged.
+
+### Fixed
+
+- Fixed `Fraction` ordering to be exact and consistent with equality for large
+  values by replacing lossy `f64`-based comparison with `i128`
+  cross-multiplication (`PartialOrd`/`Ord` now agree with `PartialEq`).
+- Added regression coverage for the `fuzz_fraction_operations` crash case and
+  i64 extreme-value ordering behavior.
+
 ## [0.7.0] - 2026-05-18
 
 ### Changed
