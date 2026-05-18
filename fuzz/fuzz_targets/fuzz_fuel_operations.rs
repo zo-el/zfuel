@@ -17,8 +17,12 @@ fuzz_target!(|data: (i64, i64, u8)| {
     let (x, y, raw_p) = data;
     let precision = Precision::new(raw_p % 7).unwrap_or(Precision::DEFAULT);
 
-    let Ok(a) = ZFuel::new(x, precision) else { return };
-    let Ok(b) = ZFuel::new(y, precision) else { return };
+    let Ok(a) = ZFuel::new(x, precision) else {
+        return;
+    };
+    let Ok(b) = ZFuel::new(y, precision) else {
+        return;
+    };
     let zero = ZFuel::zero_precision(precision);
 
     // Operators must not panic on any legal input pair; overflow is a recoverable Err.
@@ -36,13 +40,26 @@ fuzz_target!(|data: (i64, i64, u8)| {
 
     // Identity for addition: a + 0 == a.
     if let Ok(s) = a + zero {
-        assert_eq!(s, a, "addition with zero broke identity for ({}, prec={})", x, raw_p % 7);
+        assert_eq!(
+            s,
+            a,
+            "addition with zero broke identity for ({}, prec={})",
+            x,
+            raw_p % 7
+        );
     }
 
     // Additive inverse: (a + b) - b == a, when both operations succeed.
     if let Ok(sum) = a + b {
         if let Ok(back) = sum - b {
-            assert_eq!(back, a, "(a+b)-b != a for ({}, {}, prec={})", x, y, raw_p % 7);
+            assert_eq!(
+                back,
+                a,
+                "(a+b)-b != a for ({}, {}, prec={})",
+                x,
+                y,
+                raw_p % 7
+            );
         }
     }
 

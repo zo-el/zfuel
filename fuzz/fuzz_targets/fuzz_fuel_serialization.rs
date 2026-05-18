@@ -14,7 +14,9 @@ fuzz_target!(|data: (i64, u8)| {
     let (units, raw_p) = data;
     let precision = Precision::new(raw_p % 7).unwrap_or(Precision::DEFAULT);
 
-    let Ok(zfuel) = ZFuel::new(units, precision) else { return };
+    let Ok(zfuel) = ZFuel::new(units, precision) else {
+        return;
+    };
     let serialized = zfuel.to_string();
 
     // Round-trip property: re-parsing must yield a value-equal ZFuel.

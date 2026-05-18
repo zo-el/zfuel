@@ -42,7 +42,10 @@ impl Fraction {
         // fit in i64) does not panic. The GCD of any pair fits in i64 because it is bounded
         // by min(|numerator|, |denominator|), and denominator is normalized positive in `new`,
         // so the divisions below cannot overflow.
-        let g = gcd_u64(self.numerator.unsigned_abs(), self.denominator.unsigned_abs()) as i64;
+        let g = gcd_u64(
+            self.numerator.unsigned_abs(),
+            self.denominator.unsigned_abs(),
+        ) as i64;
         if g == 0 {
             // Both operands were zero (only possible if denominator is zero, which `new` rejects);
             // defensively return self unchanged.
@@ -303,7 +306,10 @@ mod tests {
         let f = Fraction::new(3, 5).unwrap();
         let r1 = f.reduce();
         let r2 = r1.reduce();
-        assert_eq!((r1.numerator, r1.denominator), (r2.numerator, r2.denominator));
+        assert_eq!(
+            (r1.numerator, r1.denominator),
+            (r2.numerator, r2.denominator)
+        );
     }
 
     #[test]

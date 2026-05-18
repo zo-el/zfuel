@@ -29,10 +29,7 @@ fuzz_target!(|v: &[u8]| {
                 s,
                 z.units
             ),
-            Err(e) => panic!(
-                "check accepted {:?} but from_str rejected it: {}",
-                s, e
-            ),
+            Err(e) => panic!("check accepted {:?} but from_str rejected it: {}", s, e),
         }
     }
 

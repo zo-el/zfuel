@@ -15,7 +15,9 @@ fuzz_target!(|data: (i64, u8)| {
     let (units, raw_p) = data;
     let precision = Precision::new(raw_p % 7).unwrap_or(Precision::DEFAULT);
 
-    let Ok(amount) = ZFuel::new(units, precision) else { return };
+    let Ok(amount) = ZFuel::new(units, precision) else {
+        return;
+    };
 
     // Must not panic for any legal input.
     let fee = tabulate_fee(&amount);

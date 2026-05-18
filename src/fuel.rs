@@ -1807,24 +1807,21 @@ pub mod tests {
     #[test]
     fn scale_units_up_multiplies_by_power_of_ten() {
         // 5 at precision 2 (== 0.05) -> precision 6 (== 0.050000) -> 50000
-        assert_eq!(
-            ZFuel::scale_units(5, p!(2), p!(6)).unwrap(),
-            50_000
-        );
+        assert_eq!(ZFuel::scale_units(5, p!(2), p!(6)).unwrap(), 50_000);
         // 0 always scales to 0
         assert_eq!(ZFuel::scale_units(0, p!(0), p!(6)).unwrap(), 0);
         // Negative values too
-        assert_eq!(
-            ZFuel::scale_units(-5, p!(2), p!(6)).unwrap(),
-            -50_000
-        );
+        assert_eq!(ZFuel::scale_units(-5, p!(2), p!(6)).unwrap(), -50_000);
     }
 
     #[test]
     fn scale_units_down_truncates_toward_zero() {
         // i64 integer division truncates toward zero
         assert_eq!(ZFuel::scale_units(12_345_678, p!(6), p!(2)).unwrap(), 1234);
-        assert_eq!(ZFuel::scale_units(-12_345_678, p!(6), p!(2)).unwrap(), -1234);
+        assert_eq!(
+            ZFuel::scale_units(-12_345_678, p!(6), p!(2)).unwrap(),
+            -1234
+        );
     }
 
     #[test]
@@ -1856,10 +1853,7 @@ pub mod tests {
     #[test]
     fn detect_precision_caps_at_max() {
         // More than 6 fractional digits should cap at MAX (6)
-        assert_eq!(
-            ZFuel::detect_precision_from_string("1.1234567").value(),
-            6
-        );
+        assert_eq!(ZFuel::detect_precision_from_string("1.1234567").value(), 6);
         assert_eq!(
             ZFuel::detect_precision_from_string("1.123456789012").value(),
             6
@@ -1877,10 +1871,7 @@ pub mod tests {
             "256-char fraction must clamp at MAX (6), not wrap to 0"
         );
         let very_long: String = "1.".to_string() + &"5".repeat(1024);
-        assert_eq!(
-            ZFuel::detect_precision_from_string(&very_long).value(),
-            6
-        );
+        assert_eq!(ZFuel::detect_precision_from_string(&very_long).value(), 6);
     }
 
     #[test]
@@ -2126,7 +2117,11 @@ pub mod tests {
             let parsed = ZFuel::from_str(&s)
                 .unwrap_or_else(|e| panic!("roundtrip failed for {:?}: {}", original, e));
             // Compared by value (which is precision-aware)
-            assert_eq!(parsed, *original, "roundtrip differs for {:?} -> {:?}", original, parsed);
+            assert_eq!(
+                parsed, *original,
+                "roundtrip differs for {:?} -> {:?}",
+                original, parsed
+            );
         }
     }
 
@@ -2241,7 +2236,15 @@ pub mod tests {
             let (a, b, c) = (window[0], window[1], window[2]);
             assert!(a < b);
             assert!(b < c);
-            assert!(a < c, "transitivity broken: {} < {} < {} but !({} < {})", a, b, c, a, c);
+            assert!(
+                a < c,
+                "transitivity broken: {} < {} < {} but !({} < {})",
+                a,
+                b,
+                c,
+                a,
+                c
+            );
         }
     }
 
@@ -2317,8 +2320,8 @@ pub mod tests {
         // Display + FromStr must round-trip MINVALUE at the only precision where it is legal.
         let original = ZFuel::new(i64::MIN, Precision::DEFAULT).unwrap();
         let rendered = format!("{}", original);
-        let parsed =
-            ZFuel::from_str(&rendered).unwrap_or_else(|e| panic!("MINVALUE roundtrip failed: {}", e));
+        let parsed = ZFuel::from_str(&rendered)
+            .unwrap_or_else(|e| panic!("MINVALUE roundtrip failed: {}", e));
         assert_eq!(parsed, original, "MINVALUE roundtrip mismatch");
     }
 
@@ -2374,7 +2377,11 @@ pub mod tests {
         for p in 0..6u8 {
             let prec = Precision::new(p).unwrap();
             let cap = max_at(p);
-            assert!(ZFuel::new(-cap, prec).is_ok(), "-cap must be legal at p={}", p);
+            assert!(
+                ZFuel::new(-cap, prec).is_ok(),
+                "-cap must be legal at p={}",
+                p
+            );
         }
         // At p == 6, MINVALUE itself is legal (the only place where |min| > |max|).
         let f = ZFuel::new(fuel::MINVALUE, Precision::DEFAULT).unwrap();
@@ -2461,9 +2468,7 @@ pub mod tests {
             }
             // MINVALUE at DEFAULT is special-cased and must also scale (no-op at DEFAULT).
             if prec == Precision::DEFAULT {
-                assert!(
-                    ZFuel::scale_units(fuel::MINVALUE, prec, Precision::DEFAULT).is_ok()
-                );
+                assert!(ZFuel::scale_units(fuel::MINVALUE, prec, Precision::DEFAULT).is_ok());
             }
         }
     }
@@ -2517,7 +2522,10 @@ pub mod tests {
             }
         }
         // MINVALUE at DEFAULT: the integer part is "9223372036854", exactly 13 digits.
-        let s = format!("{}", ZFuel::new(fuel::MINVALUE, Precision::DEFAULT).unwrap());
+        let s = format!(
+            "{}",
+            ZFuel::new(fuel::MINVALUE, Precision::DEFAULT).unwrap()
+        );
         let int_part = s
             .trim_start_matches('-')
             .split('.')
@@ -2578,8 +2586,12 @@ pub mod tests {
                 let samples_b = [0i64, 1, -1, cap_b, -cap_b, cap_b / 3];
                 for &ua in samples_a.iter() {
                     for &ub in samples_b.iter() {
-                        let Ok(a) = ZFuel::new(ua, prec_a) else { continue };
-                        let Ok(b) = ZFuel::new(ub, prec_b) else { continue };
+                        let Ok(a) = ZFuel::new(ua, prec_a) else {
+                            continue;
+                        };
+                        let Ok(b) = ZFuel::new(ub, prec_b) else {
+                            continue;
+                        };
                         let cmp = a.partial_cmp(&b);
                         assert!(
                             cmp.is_some(),
@@ -2590,10 +2602,8 @@ pub mod tests {
                             pb
                         );
                         // Re-derive the expected order by scaling both to precision 6.
-                        let a6 =
-                            ZFuel::scale_units(ua, prec_a, Precision::DEFAULT).unwrap();
-                        let b6 =
-                            ZFuel::scale_units(ub, prec_b, Precision::DEFAULT).unwrap();
+                        let a6 = ZFuel::scale_units(ua, prec_a, Precision::DEFAULT).unwrap();
+                        let b6 = ZFuel::scale_units(ub, prec_b, Precision::DEFAULT).unwrap();
                         assert_eq!(
                             cmp.unwrap(),
                             a6.cmp(&b6),
@@ -2628,8 +2638,7 @@ pub mod tests {
             "0.000001",
         ];
         for s in inputs.iter() {
-            let z = ZFuel::from_str(s)
-                .unwrap_or_else(|e| panic!("{} should parse, got {}", s, e));
+            let z = ZFuel::from_str(s).unwrap_or_else(|e| panic!("{} should parse, got {}", s, e));
             assert!(
                 ZFuel::new(z.units, z.precision).is_ok(),
                 "from_str({}) produced an out-of-range ZFuel: units={}, precision={}",
