@@ -30,14 +30,16 @@ zfuel = "0.4.0"
 ## Quick Start
 
 ```rust
+use std::str::FromStr;
 use zfuel::fuel::{ZFuel, Precision};
 use zfuel::fraction::Fraction;
 
 // Create a ZFuel amount (default precision is 6)
 let amount = ZFuel::from_str("123.456789").unwrap();
 
-// Create with specific precision
-let amount_2dp = ZFuel::new(12345, Precision::new(2).unwrap()); // 123.45
+// Create with specific precision. `ZFuel::new` is fallible: it rejects values
+// outside the per-precision range (see "Value-space invariant" below).
+let amount_2dp = ZFuel::new(12345, Precision::new(2).unwrap()).unwrap(); // 123.45
 
 // Perform arithmetic operations
 let doubled = (amount + amount).unwrap();
@@ -51,6 +53,29 @@ println!("Amount: {}", amount);      // "123.456789"
 println!("Doubled: {}", doubled);    // "246.913578"
 println!("Fee: {}", fee);            // "1.234567"
 ```
+
+### Value-space invariant
+
+A `ZFuel` value lives in a fixed range of `±MAXVALUE / 10^6 ≈ ±9.223 trillion ZFuel`,
+regardless of the chosen precision. `precision` is purely a *representation* choice
+(0–6 decimal digits); it does not change the maximum value.
+
+`ZFuel::new(units, precision)` returns `Err(ZFuelError::Range)` for any `units` whose
+absolute value exceeds the per-precision cap below:
+
+| precision | max units                  |
+|-----------|----------------------------|
+| 0         | 9_223_372_036_854          |
+| 1         | 92_233_720_368_547         |
+| 2         | 922_337_203_685_477        |
+| 3         | 9_223_372_036_854_775      |
+| 4         | 92_233_720_368_547_758     |
+| 5         | 922_337_203_685_477_580    |
+| 6         | 9_223_372_036_854_775_807  |
+
+`.unwrap()` on `ZFuel::new` is safe whenever the `units` value provably fits
+(e.g. small literals, or values that already came from another in-range
+`ZFuel` or a parsed string).
 
 ## Documentation
 
@@ -110,6 +135,7 @@ The project includes several fuzz tests to ensure robustness:
 5. `fuzz_fraction_operations`: Fraction arithmetic
 6. `fuzz_fee_calculations`: Fee computation
 7. `fuzz_fuel_serialization`: Serialization/deserialization
+8. `fuzz_invariant`: Cross-precision invariants (no-panic on every legal pair across ops)
 
 ## Contributing
 

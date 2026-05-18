@@ -16,6 +16,7 @@ fuzz:
 	cargo +nightly fuzz run fuzz_fraction_operations -- -max_total_time=300
 	cargo +nightly fuzz run fuzz_fee_calculations -- -max_total_time=300
 	cargo +nightly fuzz run fuzz_fuel_serialization -- -max_total_time=300
+	cargo +nightly fuzz run fuzz_invariant -- -max_total_time=300
 
 # Run a specific fuzz test
 fuzz-%:

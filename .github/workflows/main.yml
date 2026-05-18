@@ -6,6 +6,14 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: short
+
+concurrency:
+  group: main-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     name: Lint & Clippy
@@ -15,6 +23,14 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
       - name: Run cargo fmt
         run: cargo fmt -- --check
 
@@ -22,11 +38,25 @@ jobs:
         run: cargo clippy
 
   test:
-    name: Test
+    name: Test (${{ matrix.toolchain }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [stable, nightly]
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
 
+      - name: Install ${{ matrix.toolchain }} toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: test-${{ matrix.toolchain }}
+
       - name: Run cargo test
-        run: cargo test
+        run: cargo test --all --verbose

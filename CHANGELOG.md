@@ -3,6 +3,41 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-05-18
+
+### Changed
+
+- **BREAKING**: `ZFuel::new(units, precision)` is now fallible and returns
+  `Result<ZFuel, ZFuelError>`. It rejects any `units` whose absolute value
+  exceeds the per-precision cap (`MAXVALUE / 10^(6-precision)`), enforcing the
+  documented value-space invariant that a `ZFuel` always lives in the fixed
+  range `±MAXVALUE / 10^6 ≈ ±9.223 trillion`, regardless of precision.
+  - Migration: add `.unwrap()` (or `?`) after `ZFuel::new(...)`. This is safe
+    whenever the units value provably fits: small literals, values from another
+    in-range `ZFuel`, or values returned by `ZFuel::from_str`.
+  - `ZFuel::new_with_default_precision`, `From<i64>`, `zero`, and
+    `zero_precision` remain infallible (their construction can never violate
+    the invariant).
+- Arithmetic operations (`Add`, `Sub`) now range-check their result through the
+  validating constructor and return `Err(Range)` if the mathematical result
+  exceeds the value space at the result precision. They never panic.
+
+### Added
+
+- `ZFuel::max_units_at(precision)` and `ZFuel::min_units_abs_at(precision)`
+  helpers exposing the per-precision unit caps.
+- Unit and property tests pinning the new invariant (boundary cases per
+  precision, cross-precision total comparison, mixed-precision add safety,
+  Display digit-budget, parser post-condition).
+- New `fuzz_invariant` fuzz target that asserts no-panic for _every_ legal
+  pair of `ZFuel` values across scaling, comparison, addition, subtraction,
+  and fee-shaped multiplication.
+
+### Fixed
+
+- `INTLIMIT` reverted to `13` (was briefly `19`); the parser is again the
+  simpler "parse at precision 6, scale down to detected precision" pipeline.
+
 ## [0.6.1] - 2026-03-05
 
 ### Added

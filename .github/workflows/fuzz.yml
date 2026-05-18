@@ -9,40 +9,63 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: full
+  # Total wall-clock budget per fuzz target (seconds)
   FUZZ_TIME: 300
   FUZZ_JOBS: 2
 
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
+    name: fuzz / ${{ matrix.target }}
+    runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest]
-
-    name: fuzz-${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+        target:
+          - fuzz_fuel
+          - fuzz_fraction
+          - fuzz_fuel_string
+          - fuzz_fuel_operations
+          - fuzz_fraction_operations
+          - fuzz_fee_calculations
+          - fuzz_fuel_serialization
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v1
-        with:
-          key: ${{ matrix.os }}
+      - name: Checkout sources
+        uses: actions/checkout@v4
 
-      - uses: actions-rs/cargo@v1
-        name: Install cargo-fuzz
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
         with:
-          command: install
-          args: cargo-fuzz
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry, index and build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            fuzz
+          key: fuzz-${{ matrix.target }}
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
 
       - name: Run regular tests
-        run: cargo test --all
+        run: cargo test --all --verbose
 
-      - name: Run fuzz tests
+      - name: Run fuzz target ${{ matrix.target }}
+        working-directory: fuzz
         run: |
-          for FUZZ_TARGET in fuzz_fuel fuzz_fraction fuzz_fuel_string fuzz_fuel_operations fuzz_fraction_operations fuzz_fee_calculations fuzz_fuel_serialization; do
-            echo "Running fuzz test: $FUZZ_TARGET"
-            cargo +nightly fuzz run $FUZZ_TARGET --jobs ${{ env.FUZZ_JOBS }} -- \
-              -max_total_time=${{ env.FUZZ_TIME }}
-          done
+          cargo +nightly fuzz run ${{ matrix.target }} \
+            --jobs ${{ env.FUZZ_JOBS }} -- \
+            -max_total_time=${{ env.FUZZ_TIME }}
+
+      - name: Upload crash artifacts (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: fuzz/artifacts/
+          if-no-files-found: ignore

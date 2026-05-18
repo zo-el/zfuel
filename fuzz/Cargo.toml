@@ -61,3 +61,10 @@ path = "fuzz_targets/fuzz_fuel_serialization.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fuzz_invariant"
+path = "fuzz_targets/fuzz_invariant.rs"
+test = false
+doc = false
+bench = false

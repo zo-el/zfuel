@@ -103,15 +103,15 @@ pub mod tests {
     #[test]
     fn test_precision_constructors() {
         // Test basic constructors with different precisions
-        let f0 = ZFuel::new(123, p!(0));
+        let f0 = ZFuel::new(123, p!(0)).unwrap();
         assert_eq!(f0.units, 123);
         assert_eq!(f0.precision, p!(0));
 
-        let f2 = ZFuel::new(12345, p!(2));
+        let f2 = ZFuel::new(12345, p!(2)).unwrap();
         assert_eq!(f2.units, 12345);
         assert_eq!(f2.precision, p!(2));
 
-        let f6 = ZFuel::new(1234567, p!(6));
+        let f6 = ZFuel::new(1234567, p!(6)).unwrap();
         assert_eq!(f6.units, 1234567);
         assert_eq!(f6.precision, Precision::DEFAULT);
 
@@ -128,7 +128,7 @@ pub mod tests {
     #[test]
     fn test_precision_scaling() {
         // Test scaling between different precisions
-        let f2 = ZFuel::new(150, p!(2)); // 1.50 at precision 2
+        let f2 = ZFuel::new(150, p!(2)).unwrap(); // 1.50 at precision 2
 
         // Scale up to higher precision
         let f6 = f2.to_precision(p!(6)).unwrap();
@@ -148,8 +148,8 @@ pub mod tests {
 
     #[test]
     fn test_mixed_precision_arithmetic() {
-        let f2 = ZFuel::new(150, p!(2)); // 1.50 at precision 2
-        let f4 = ZFuel::new(12500, p!(4)); // 1.2500 at precision 4
+        let f2 = ZFuel::new(150, p!(2)).unwrap(); // 1.50 at precision 2
+        let f4 = ZFuel::new(12500, p!(4)).unwrap(); // 1.2500 at precision 4
 
         // Addition should use higher precision (4)
         let sum = (f2 + f4).unwrap();
@@ -165,51 +165,58 @@ pub mod tests {
     #[test]
     fn test_precision_display() {
         // Test display formatting for different precisions
-        let f0 = ZFuel::new(123, p!(0));
+        let f0 = ZFuel::new(123, p!(0)).unwrap();
         assert_eq!(format!("{}", f0), "123");
 
-        let f1 = ZFuel::new(125, p!(1)); // 12.5
+        let f1 = ZFuel::new(125, p!(1)).unwrap(); // 12.5
         assert_eq!(format!("{}", f1), "12.5");
 
-        let f2 = ZFuel::new(1250, p!(2)); // 12.50
+        let f2 = ZFuel::new(1250, p!(2)).unwrap(); // 12.50
         assert_eq!(format!("{}", f2), "12.5"); // Trailing zeros removed
 
-        let f2_exact = ZFuel::new(1234, p!(2)); // 12.34
+        let f2_exact = ZFuel::new(1234, p!(2)).unwrap(); // 12.34
         assert_eq!(format!("{}", f2_exact), "12.34");
 
-        let f6 = ZFuel::new(1234567, p!(6)); // 1.234567
+        let f6 = ZFuel::new(1234567, p!(6)).unwrap(); // 1.234567
         assert_eq!(format!("{}", f6), "1.234567");
     }
 
     #[test]
     fn test_precision_edge_cases() {
         // Test precision 0 (integers only)
-        let f0 = ZFuel::new(42, p!(0));
+        let f0 = ZFuel::new(42, p!(0)).unwrap();
         assert_eq!(format!("{}", f0), "42");
 
         // Test maximum precision (6)
-        let f6 = ZFuel::new(1000000, p!(6)); // 1.000000
+        let f6 = ZFuel::new(1000000, p!(6)).unwrap(); // 1.000000
         assert_eq!(format!("{}", f6), "1");
 
         // Test very small values at different precisions
-        let f1_small = ZFuel::new(1, p!(1)); // 0.1
+        let f1_small = ZFuel::new(1, p!(1)).unwrap(); // 0.1
         assert_eq!(format!("{}", f1_small), "0.1");
 
-        let f6_small = ZFuel::new(1, p!(6)); // 0.000001
+        let f6_small = ZFuel::new(1, p!(6)).unwrap(); // 0.000001
         assert_eq!(format!("{}", f6_small), "0.000001");
     }
 
     #[test]
     fn test_precision_overflow_handling() {
-        // Test that scaling up can cause overflow
-        let large_f0 = ZFuel::new(i64::MAX, p!(0));
-        let result = large_f0.to_precision(p!(6));
-        assert!(result.is_err()); // Should overflow when scaling up
+        // With the bounded value space, `ZFuel::new(i64::MAX, p!(0))` is now rejected at
+        // construction time — that's stronger than the old "construct then fail to scale up"
+        // contract. Pin both: out-of-range construction fails up front, and any legally
+        // constructed value scales freely between precisions.
+        let oob = ZFuel::new(i64::MAX, p!(0));
+        assert!(oob.is_err(), "i64::MAX is out of range at precision 0");
 
-        // Test that scaling down works for large values
-        let large_f6 = ZFuel::new(i64::MAX, p!(6));
-        let result = large_f6.to_precision(p!(0));
-        assert!(result.is_ok()); // Should work when scaling down
+        // i64::MAX at precision 6 is exactly the max legal value; scaling down is always safe.
+        let large_f6 = ZFuel::new(i64::MAX, p!(6)).unwrap();
+        let scaled = large_f6.to_precision(p!(0));
+        assert!(scaled.is_ok());
+
+        // The largest legal value at precision 0 round-trips up to precision 6 without overflow.
+        let max_p0 = ZFuel::new(ZFuel::max_units_at(p!(0)) as i64, p!(0)).unwrap();
+        let up = max_p0.to_precision(p!(6));
+        assert!(up.is_ok(), "max-at-p0 must scale up to p6 without overflow");
     }
 
     #[test]
@@ -271,7 +278,7 @@ pub mod tests {
     #[test]
     fn test_precision_string_roundtrip() {
         // Test string parsing/display roundtrip
-        let original = ZFuel::new(12345, p!(2)); // 123.45 at precision 2
+        let original = ZFuel::new(12345, p!(2)).unwrap(); // 123.45 at precision 2
 
         // Convert to string
         let string_repr = format!("{}", original);
@@ -291,7 +298,7 @@ pub mod tests {
         // Test all valid precision values (0-6)
         for precision_val in 0..=6 {
             let precision = Precision::new(precision_val).unwrap();
-            let f = ZFuel::new(123, precision);
+            let f = ZFuel::new(123, precision).unwrap();
             assert_eq!(f.precision, precision);
 
             let z = ZFuel::zero_precision(precision);
@@ -312,29 +319,29 @@ pub mod tests {
         // Property: Converting to same precision should be identity
         for precision_val in 0..=6 {
             let precision = Precision::new(precision_val).unwrap();
-            let original = ZFuel::new(12345, precision);
+            let original = ZFuel::new(12345, precision).unwrap();
             let converted = original.to_precision(precision).unwrap();
             assert_eq!(original.units, converted.units);
             assert_eq!(original.precision, converted.precision);
         }
 
         // Property: Converting up then down should preserve value (within precision limits)
-        let original = ZFuel::new(123, p!(2));
+        let original = ZFuel::new(123, p!(2)).unwrap();
         let up = original.to_precision(p!(6)).unwrap();
         let down = up.to_precision(p!(2)).unwrap();
         assert_eq!(original.units, down.units);
         assert_eq!(original.precision, down.precision);
 
         // Property: Addition is commutative (same precision)
-        let a = ZFuel::new(100, p!(3));
-        let b = ZFuel::new(200, p!(3));
+        let a = ZFuel::new(100, p!(3)).unwrap();
+        let b = ZFuel::new(200, p!(3)).unwrap();
         let sum1 = (a + b).unwrap();
         let sum2 = (b + a).unwrap();
         assert_eq!(sum1.units, sum2.units);
         assert_eq!(sum1.precision, sum2.precision);
 
         // Property: Addition with zero is identity
-        let original = ZFuel::new(12345, p!(4));
+        let original = ZFuel::new(12345, p!(4)).unwrap();
         let zero = ZFuel::zero_precision(p!(4));
         let result = (original + zero).unwrap();
         assert_eq!(original.units, result.units);
@@ -344,12 +351,12 @@ pub mod tests {
         );
 
         // Property: Subtraction with self gives zero
-        let original = ZFuel::new(12345, p!(2));
+        let original = ZFuel::new(12345, p!(2)).unwrap();
         let result = (original - original).unwrap();
         assert_eq!(result.units, 0);
 
         // Property: Negation is involution (double negation)
-        let original = ZFuel::new(12345, p!(3));
+        let original = ZFuel::new(12345, p!(3)).unwrap();
         let neg_once = (-original).unwrap();
         let neg_twice = (-neg_once).unwrap();
         assert_eq!(original.units, neg_twice.units);
@@ -360,9 +367,21 @@ pub mod tests {
     fn test_precision_arithmetic_properties() {
         // Property: Mixed precision arithmetic uses higher precision
         let test_cases = [
-            (ZFuel::new(100, p!(0)), ZFuel::new(200, p!(3)), p!(3)),
-            (ZFuel::new(100, p!(2)), ZFuel::new(200, p!(1)), p!(2)),
-            (ZFuel::new(100, p!(6)), ZFuel::new(200, p!(4)), p!(6)),
+            (
+                ZFuel::new(100, p!(0)).unwrap(),
+                ZFuel::new(200, p!(3)).unwrap(),
+                p!(3),
+            ),
+            (
+                ZFuel::new(100, p!(2)).unwrap(),
+                ZFuel::new(200, p!(1)).unwrap(),
+                p!(2),
+            ),
+            (
+                ZFuel::new(100, p!(6)).unwrap(),
+                ZFuel::new(200, p!(4)).unwrap(),
+                p!(6),
+            ),
         ];
 
         for (a, b, expected_precision) in test_cases.iter() {
@@ -388,7 +407,7 @@ pub mod tests {
         ];
 
         for &(units, precision) in test_values.iter() {
-            let original = ZFuel::new(units, precision);
+            let original = ZFuel::new(units, precision).unwrap();
             let _display_original = format!("{}", original);
 
             // Scale to different precisions and back
@@ -409,24 +428,28 @@ pub mod tests {
     }
 
     #[test]
+    #[ignore = "timing-sensitive benchmark; run explicitly with `cargo test -- --ignored`"]
     fn benchmark_precision_operations() {
+        use std::hint::black_box;
         use std::time::Instant;
 
         // Benchmark precision scaling
         let start = Instant::now();
         for _ in 0..10000 {
-            let f = ZFuel::new(123456, p!(2));
-            let _scaled = f.to_precision(p!(6)).unwrap();
+            let f = ZFuel::new(123456, p!(2)).unwrap();
+            let scaled = black_box(f).to_precision(p!(6)).unwrap();
+            black_box(scaled);
         }
         let scaling_duration = start.elapsed();
         println!("Precision scaling (10k ops): {:?}", scaling_duration);
 
         // Benchmark mixed precision arithmetic
         let start = Instant::now();
-        let f1 = ZFuel::new(123456, p!(2));
-        let f2 = ZFuel::new(789012, p!(4));
+        let f1 = ZFuel::new(123456, p!(2)).unwrap();
+        let f2 = ZFuel::new(789012, p!(4)).unwrap();
         for _ in 0..10000 {
-            let _sum = (f1 + f2).unwrap();
+            let sum = (black_box(f1) + black_box(f2)).unwrap();
+            black_box(sum);
         }
         let arithmetic_duration = start.elapsed();
         println!(
@@ -436,9 +459,10 @@ pub mod tests {
 
         // Benchmark display formatting
         let start = Instant::now();
-        let f = ZFuel::new(123456789, p!(6));
+        let f = ZFuel::new(123456789, p!(6)).unwrap();
         for _ in 0..10000 {
-            let _display = format!("{}", f);
+            let display = format!("{}", black_box(f));
+            black_box(display);
         }
         let display_duration = start.elapsed();
         println!("Display formatting (10k ops): {:?}", display_duration);
@@ -446,41 +470,49 @@ pub mod tests {
         // Benchmark string parsing
         let start = Instant::now();
         for _ in 0..10000 {
-            let _parsed = ZFuel::from_str("123.456789").unwrap();
+            let parsed = ZFuel::from_str(black_box("123.456789")).unwrap();
+            black_box(parsed);
         }
         let parsing_duration = start.elapsed();
         println!("String parsing (10k ops): {:?}", parsing_duration);
 
-        // These are just timing measurements, not assertions
-        // In a real benchmark, you'd want to use a proper benchmarking framework
-        assert!(scaling_duration.as_millis() < 1000); // Should be fast
-        assert!(arithmetic_duration.as_millis() < 1000);
-        assert!(display_duration.as_millis() < 1000);
-        assert!(parsing_duration.as_millis() < 1000);
+        // These are loose sanity checks, not real performance assertions.
+        // A real benchmark would use a proper benchmarking framework like criterion.
+        assert!(scaling_duration.as_millis() < 5000);
+        assert!(arithmetic_duration.as_millis() < 5000);
+        assert!(display_duration.as_millis() < 5000);
+        assert!(parsing_duration.as_millis() < 5000);
     }
 
     #[test]
+    #[ignore = "timing-sensitive benchmark; run explicitly with `cargo test -- --ignored`"]
     fn benchmark_precision_vs_fixed() {
+        use std::hint::black_box;
         use std::time::Instant;
 
-        // Compare performance of variable precision vs fixed precision operations
+        // Compare performance of variable precision vs fixed precision operations.
+        // `black_box` is used on both inputs and outputs so the optimizer cannot
+        // hoist loop-invariant work out of one branch but not the other, which
+        // would produce wildly unrealistic ratios on optimized builds.
         let iterations = 100000;
 
         // Fixed precision operations (all precision 6)
         let start = Instant::now();
-        let f1 = ZFuel::new(123456, p!(6));
-        let f2 = ZFuel::new(789012, p!(6));
+        let f1 = ZFuel::new(123456, p!(6)).unwrap();
+        let f2 = ZFuel::new(789012, p!(6)).unwrap();
         for _ in 0..iterations {
-            let _sum = (f1 + f2).unwrap();
+            let sum = (black_box(f1) + black_box(f2)).unwrap();
+            black_box(sum);
         }
         let fixed_duration = start.elapsed();
 
         // Mixed precision operations
         let start = Instant::now();
-        let f1 = ZFuel::new(123456, p!(2));
-        let f2 = ZFuel::new(789012, p!(4));
+        let f1 = ZFuel::new(123456, p!(2)).unwrap();
+        let f2 = ZFuel::new(789012, p!(4)).unwrap();
         for _ in 0..iterations {
-            let _sum = (f1 + f2).unwrap();
+            let sum = (black_box(f1) + black_box(f2)).unwrap();
+            black_box(sum);
         }
         let mixed_duration = start.elapsed();
 
@@ -499,43 +531,43 @@ pub mod tests {
         let ratio = mixed_duration.as_nanos() as f64 / fixed_duration.as_nanos() as f64;
         println!("Performance ratio (mixed/fixed): {:.2}", ratio);
 
-        // Allow up to 10.0x slower for mixed precision (scaling overhead is expected, some variance is normal)
-        // Increased threshold due to rounding logic overhead and timing variance
+        // Allow generous headroom; this remains an indicative ratio only.
         assert!(
             ratio < 10.0,
-            "Mixed precision operations are too slow compared to fixed precision"
+            "Mixed precision operations are too slow compared to fixed precision (ratio = {:.2})",
+            ratio
         );
     }
 
     #[test]
     fn test_is_valid_precision() {
         // Test: Lower precision is always valid for higher expected precision
-        let value_p0 = ZFuel::new(123, p!(0)); // 123 (integer)
+        let value_p0 = ZFuel::new(123, p!(0)).unwrap(); // 123 (integer)
         assert!(value_p0.is_valid_precision(p!(0)));
         assert!(value_p0.is_valid_precision(p!(2)));
         assert!(value_p0.is_valid_precision(p!(6)));
 
-        let value_p2 = ZFuel::new(12345, p!(2)); // 123.45
+        let value_p2 = ZFuel::new(12345, p!(2)).unwrap(); // 123.45
         assert!(value_p2.is_valid_precision(p!(2)));
         assert!(value_p2.is_valid_precision(p!(6)));
         assert!(!value_p2.is_valid_precision(p!(1))); // Can't represent 2 decimals at precision 1
 
         // Test: Higher precision with trailing zeros is valid for lower expected precision
-        let value_p3_trailing_zero = ZFuel::new(123450, p!(3)); // 123.450
+        let value_p3_trailing_zero = ZFuel::new(123450, p!(3)).unwrap(); // 123.450
         assert!(value_p3_trailing_zero.is_valid_precision(p!(3)));
         assert!(value_p3_trailing_zero.is_valid_precision(p!(2))); // 123.45, third decimal is 0
         assert!(!value_p3_trailing_zero.is_valid_precision(p!(1))); // 123.4, but second decimal (5) is non-zero
         assert!(!value_p3_trailing_zero.is_valid_precision(p!(0))); // 123, but decimals are non-zero
 
         // Test: Value with all trailing zeros
-        let value_all_zeros = ZFuel::new(123000, p!(3)); // 123.000
+        let value_all_zeros = ZFuel::new(123000, p!(3)).unwrap(); // 123.000
         assert!(value_all_zeros.is_valid_precision(p!(3)));
         assert!(value_all_zeros.is_valid_precision(p!(2))); // 123.00
         assert!(value_all_zeros.is_valid_precision(p!(1))); // 123.0
         assert!(value_all_zeros.is_valid_precision(p!(0))); // 123
 
         // Test: Higher precision with non-zero trailing digits is invalid for lower expected precision
-        let value_p3_nonzero = ZFuel::new(123456, p!(3)); // 123.456
+        let value_p3_nonzero = ZFuel::new(123456, p!(3)).unwrap(); // 123.456
         assert!(value_p3_nonzero.is_valid_precision(p!(3)));
         assert!(!value_p3_nonzero.is_valid_precision(p!(2))); // Would lose the 6
         assert!(!value_p3_nonzero.is_valid_precision(p!(1))); // Would lose the 56
@@ -547,20 +579,20 @@ pub mod tests {
         assert!(zero.is_valid_precision(p!(6)));
 
         // Test: Precision 6 value with trailing zeros
-        let value_p6 = ZFuel::new(123450000, p!(6)); // 123.450000
+        let value_p6 = ZFuel::new(123450000, p!(6)).unwrap(); // 123.450000
         assert!(value_p6.is_valid_precision(p!(6)));
         assert!(value_p6.is_valid_precision(p!(3))); // Last 3 decimals are 0
         assert!(value_p6.is_valid_precision(p!(2))); // Last 4 decimals are 0
         assert!(!value_p6.is_valid_precision(p!(1))); // Third decimal (5) is non-zero
 
         // Test: Mixed precision scenarios
-        let value_p4 = ZFuel::new(12345670, p!(4)); // 1234.5670
+        let value_p4 = ZFuel::new(12345670, p!(4)).unwrap(); // 1234.5670
         assert!(value_p4.is_valid_precision(p!(4)));
         assert!(value_p4.is_valid_precision(p!(3))); // Last decimal (0) is zero, so valid
         assert!(!value_p4.is_valid_precision(p!(2))); // Third decimal (7) is non-zero
 
         // Test: Precision 4 with non-zero last digit
-        let value_p4_nonzero = ZFuel::new(12345671, p!(4)); // 1234.5671
+        let value_p4_nonzero = ZFuel::new(12345671, p!(4)).unwrap(); // 1234.5671
         assert!(value_p4_nonzero.is_valid_precision(p!(4)));
         assert!(!value_p4_nonzero.is_valid_precision(p!(3))); // Last decimal (1) is non-zero
     }
@@ -569,24 +601,24 @@ pub mod tests {
     fn test_value_based_equality() {
         // Test: Same value, different precision
         // Now == uses value-based comparison
-        let a = ZFuel::new(10, p!(0)); // 10
-        let b = ZFuel::new(10000000, p!(6)); // 10.000000
+        let a = ZFuel::new(10, p!(0)).unwrap(); // 10
+        let b = ZFuel::new(10000000, p!(6)).unwrap(); // 10.000000
         assert!(a == b); // Value-based: 10 == 10.000000
 
         // Test: Same value, same precision
-        let c = ZFuel::new(12345, p!(2)); // 123.45
-        let d = ZFuel::new(12345, p!(2)); // 123.45
+        let c = ZFuel::new(12345, p!(2)).unwrap(); // 123.45
+        let d = ZFuel::new(12345, p!(2)).unwrap(); // 123.45
         assert!(c == d); // Value-based equality works
 
         // Test: Different values, same precision
-        let e = ZFuel::new(12345, p!(2)); // 123.45
-        let f = ZFuel::new(12346, p!(2)); // 123.46
+        let e = ZFuel::new(12345, p!(2)).unwrap(); // 123.45
+        let f = ZFuel::new(12346, p!(2)).unwrap(); // 123.46
         assert!(e != f); // Value-based: different values
         assert!(e < f); // Value-based: 123.45 < 123.46
 
         // Test: Different values, different precision
-        let g = ZFuel::new(123, p!(0)); // 123
-        let h = ZFuel::new(12345000, p!(3)); // 123.450
+        let g = ZFuel::new(123, p!(0)).unwrap(); // 123
+        let h = ZFuel::new(12345000, p!(3)).unwrap(); // 123.450
         assert!(g != h); // Value-based: 123 != 123.450
         assert!(g < h); // Value-based: 123 < 123.450
 
@@ -596,29 +628,31 @@ pub mod tests {
         assert!(zero_p0 == zero_p6); // Value-based: 0 == 0
 
         // Test: Negative values
-        let neg_a = ZFuel::new(-10, p!(0)); // -10
-        let neg_b = ZFuel::new(-10000000, p!(6)); // -10.000000
+        let neg_a = ZFuel::new(-10, p!(0)).unwrap(); // -10
+        let neg_b = ZFuel::new(-10000000, p!(6)).unwrap(); // -10.000000
         assert!(neg_a == neg_b); // Value-based: -10 == -10.000000
 
-        // Test: Edge case - very large values
-        let max_p0 = ZFuel::new(i64::MAX, p!(0));
-        let max_p6 = ZFuel::new(i64::MAX, p!(6));
-        // These might not compare correctly due to overflow, but shouldn't panic
-        let _comparison = max_p0.partial_cmp(&max_p6);
-        // partial_cmp returns None if comparison fails, which is fine
+        // Test: Edge case - largest legal values at each precision.
+        // With the bounded value-space invariant, the precision-0 cap is
+        // ZFuel::max_units_at(p!(0)) (not i64::MAX) — and the corresponding
+        // precision-6 value compares equal to it (no overflow during the scale).
+        let max_p0 = ZFuel::new(ZFuel::max_units_at(p!(0)) as i64, p!(0)).unwrap();
+        let max_p6 = ZFuel::new(i64::MAX, p!(6)).unwrap();
+        let cmp = max_p0.partial_cmp(&max_p6);
+        assert!(cmp.is_some(), "cross-precision compare is now total");
     }
 
     #[test]
     fn test_value_based_comparison() {
         // Test: Less than
-        let a = ZFuel::new(12345, p!(2)); // 123.45
-        let b = ZFuel::new(12346, p!(2)); // 123.46
+        let a = ZFuel::new(12345, p!(2)).unwrap(); // 123.45
+        let b = ZFuel::new(12346, p!(2)).unwrap(); // 123.46
         assert!(a < b);
         assert!(!(b < a));
 
         // Test: Less than with different precisions
-        let c = ZFuel::new(10, p!(0)); // 10
-        let d = ZFuel::new(10000001, p!(6)); // 10.000001
+        let c = ZFuel::new(10, p!(0)).unwrap(); // 10
+        let d = ZFuel::new(10000001, p!(6)).unwrap(); // 10.000001
         assert!(c < d);
         assert!(!(d < c));
 
@@ -639,23 +673,23 @@ pub mod tests {
         assert!(a >= a); // Equal values
 
         // Test: Negative values
-        let neg_small = ZFuel::new(-12346, p!(2)); // -123.46
-        let neg_large = ZFuel::new(-12345, p!(2)); // -123.45
+        let neg_small = ZFuel::new(-12346, p!(2)).unwrap(); // -123.46
+        let neg_large = ZFuel::new(-12345, p!(2)).unwrap(); // -123.45
         assert!(neg_small < neg_large);
         assert!(neg_large > neg_small);
 
         // Test: Zero comparisons
         let zero = ZFuel::zero();
-        let positive = ZFuel::new(1000000, p!(6)); // 1.000000
-        let negative = ZFuel::new(-1000000, p!(6)); // -1.000000
+        let positive = ZFuel::new(1000000, p!(6)).unwrap(); // 1.000000
+        let negative = ZFuel::new(-1000000, p!(6)).unwrap(); // -1.000000
         assert!(negative < zero);
         assert!(zero < positive);
         assert!(positive > zero);
         assert!(zero > negative);
 
         // Test: Edge cases - equal values with different precision
-        let e1 = ZFuel::new(10, p!(0)); // 10
-        let e2 = ZFuel::new(10000000, p!(6)); // 10.000000
+        let e1 = ZFuel::new(10, p!(0)).unwrap(); // 10
+        let e2 = ZFuel::new(10000000, p!(6)).unwrap(); // 10.000000
         assert!(!(e1 < e2));
         assert!(!(e1 > e2));
         assert!(e1 <= e2);
