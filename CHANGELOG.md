@@ -3,6 +3,15 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-08-03
+
+### Changed
+
+- Bump `holochain_wasmer_common` to `0.0.103` for Holochain 0.7 compatibility
+  (`hdk 0.7` / `hdi 0.8` pin `holochain_wasmer_common =0.0.103`). No API change;
+  `0.9.0` targets the Holochain 0.7 line, while `0.8.0` remains the 0.6-line
+  release.
+
 ## [0.8.0] - 2026-05-18
 
 ### Changed

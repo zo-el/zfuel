@@ -9,7 +9,7 @@ edition = "2021"
 
 [package]
 name = "zfuel"
-version = "0.8.0"
+version = "0.9.0"
 description = "ZFuel types used for a mutual credit accounting system"
 homepage = "https://github.com/zo-el/zfuel"
 license = "Apache-2.0"
@@ -23,7 +23,7 @@ lazy_static = "1.4.0"
 regex = "1.12.2"
 serde = "1.0"
 thiserror = "2.0.17"
-holochain_wasmer_common = "0.0.102"
+holochain_wasmer_common = "0.0.103"
 
 [dev-dependencies]
 serde_json = "1.0"
