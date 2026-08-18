@@ -1,8 +1,9 @@
 use crate::error::ZFuelError;
+use serde::{Deserialize, Serialize};
 use std::ops::{Add, Div, Mul, Sub};
 use std::{cmp, fmt};
 
-#[derive(Debug, Clone, Copy)] // Copy req'd for binary op implementations
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)] // Copy req'd for binary op implementations
 pub struct Fraction {
     pub numerator: i64,
     pub denominator: i64,
@@ -484,5 +485,50 @@ mod tests {
         // (MAX/4) * 1 / (2 * 2) is representable without overflow
         assert_eq!(product.numerator, i64::MAX / 4);
         assert_eq!(product.denominator, 4);
+    }
+
+    // ---- serde ----
+
+    #[test]
+    fn serde_json_roundtrip_preserves_value() {
+        // Fields are asserted as well as equality: `PartialEq` is value-based, so a decode
+        // that silently reduced the fraction would still compare equal.
+        for (numerator, denominator) in [
+            (1, 2),
+            (2, 4),
+            (-3, 4),
+            (0, 7),
+            (i64::MIN, 1),
+            (i64::MAX, i64::MAX),
+        ] {
+            let original = Fraction::new(numerator, denominator).unwrap();
+            let json = serde_json::to_string(&original).expect("serialize");
+            let decoded: Fraction = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(decoded, original, "value changed for {}", json);
+            assert_eq!(decoded.numerator, original.numerator, "numerator changed");
+            assert_eq!(
+                decoded.denominator, original.denominator,
+                "denominator changed"
+            );
+        }
+    }
+
+    #[test]
+    fn serde_uses_the_derived_struct_representation() {
+        // ZFuel serializes as a human-readable string; Fraction deliberately does not.
+        let value = serde_json::to_value(Fraction::new(3, -4).unwrap()).expect("serialize");
+        assert_eq!(
+            value,
+            serde_json::json!({"numerator": -3, "denominator": 4})
+        );
+    }
+
+    #[test]
+    fn serde_deserialize_does_not_validate_the_denominator() {
+        // Deliberate: a zero denominator is left to surface as a validation failure where
+        // the value is written, rather than as a decode error.
+        let decoded: Fraction =
+            serde_json::from_str(r#"{"numerator":1,"denominator":0}"#).expect("deserialize");
+        assert_eq!(decoded.denominator, 0);
     }
 }

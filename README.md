@@ -24,7 +24,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-zfuel = "0.4.0"
+zfuel = "0.9.1"
 ```
 
 ## Quick Start

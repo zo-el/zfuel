@@ -3,6 +3,15 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-08-18
+
+### Added
+
+- `Fraction` derives `Serialize` and `Deserialize`, so it can be a field of a
+  Holochain entry struct. It serializes as a plain two-field struct, not as the
+  human-readable string `ZFuel` uses, and deserialization does not validate the
+  denominator: `Fraction::new` remains the only constructor-side check.
+
 ## [0.9.0] - 2026-08-03
 
 ### Changed

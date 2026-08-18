@@ -32,6 +32,7 @@ The library defines several error types:
 - Used for fee calculations and percentage operations
 - Implements reduction to simplest form
 - Supports basic arithmetic operations
+- Serializes as a plain two-field struct, so it can be a field of a Holochain entry
 
 #### Fee Calculation
 
